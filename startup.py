@@ -96,6 +96,15 @@ class HoudiniLauncher(SoftwareLauncher):
             "python",
         )
         sys.path.insert(0, tk_houdini_python_path)
+        houdini_path = os.environ.get("HOUDINI_PATH", [])
+        if houdini_path:
+            houdini_path = houdini_path.split(os.pathsep)
+            if "&" in houdini_path:
+                houdini_path.remove("&")
+        houdini_path.extend([os.path.join(self.disk_location, "houdini"), "&"])
+        self.logger.debug(os.pathsep.join(houdini_path))
+        
+        os.environ["HOUDINI_PATH"] = os.pathsep.join(houdini_path)
 
         from tk_houdini import bootstrap
 

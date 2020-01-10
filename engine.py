@@ -71,6 +71,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         # keep track of if a UI exists
         self._ui_enabled = hasattr(hou, 'ui')
+        self.__node_handlers = {}
 
     def pre_app_init(self):
         """
@@ -891,3 +892,19 @@ class HoudiniEngine(sgtk.platform.Engine):
             "Found top level widget %s for dialog parenting" % (parent,))
         return parent
 
+    def node_handler(self, node):
+        """
+        """
+        node_type = node.type().name()
+        if node_type not in self.__node_handlers:
+            node_handlers = self.get_setting("node_handlers")
+            tk_houdini = self.import_module("tk_houdini")
+            base_class = tk_houdini.base_hooks.NodeHandlerBase
+            for handler in node_handlers:
+                if handler["node_type"] == node_type:
+                    self.__node_handlers[node_type] = self.create_hook_instance(
+                        handler["hook"],
+                        base_class=base_class,
+                    )
+                    break
+        return self.__node_handlers[node_type]

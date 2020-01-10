@@ -7,6 +7,7 @@
 # By accessing, using, copying or modifying this work you indicate your
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
+from . import base_hooks
 from . import bootstrap
 from .ui_generation import (
     AppCommandsMenu,
@@ -17,6 +18,7 @@ from .ui_generation import (
     get_registered_panels,
     get_wrapped_panel_widget,
 )
+from . import utils
 
 try:
     # hou might not be available during bootstrap

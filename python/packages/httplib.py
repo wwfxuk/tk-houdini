@@ -256,7 +256,7 @@ class HTTPMessage(mimetools.Message):
         """
         # XXX The implementation overrides the readheaders() method of
         # rfc822.Message.  The base class design isn't amenable to
-        # customized behavior here so the method here is a copy of the
+        # customised behavior here so the method here is a copy of the
         # base class code with a few small changes.
 
         self.dict = {}

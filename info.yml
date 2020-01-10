@@ -85,6 +85,23 @@ configuration:
                 name: { type: str }
                 app_instance: { type: str }
 
+    node_handlers:
+        type: list
+        allows_empty: True
+        default_value: []
+        values:
+            type: dict 
+            items:
+                node_type: { type: str }
+                hook: { type: hook }
+                work_template: 
+                    type: template
+                    fields: context, [name], [version], *   
+                publish_template:
+                    type: template
+                    fields: context, [name], [version], *
+                extra_args: { type: dict }
+
 # the Shotgun fields that this engine needs in order to operate correctly
 requires_shotgun_fields:
 

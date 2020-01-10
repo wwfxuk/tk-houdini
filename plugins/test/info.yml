@@ -24,7 +24,7 @@ base_configuration:
   name: tk-config-basic
 
 # The Plugin Id helps uniquely identify this plugin and can be
-# used to override and customize it. For more information, see
+# used to override and customise it. For more information, see
 # http://developer.shotgunsoftware.com/tk-core/bootstrap.html#sgtk.bootstrap.ToolkitManager.plugin_id
 #
 # When the plugin is built, this file will be converted into a manifest.py file
