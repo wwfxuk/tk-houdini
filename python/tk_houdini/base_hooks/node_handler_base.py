@@ -25,17 +25,17 @@ class NodeHandlerBase(HookBaseClass):
 
     def __new__(cls, *args, **kwargs):
         if cls.NODE_TYPE:
-            if hasattr(cls, "work_template"):
+            if hasattr(cls, "_work_template"):
                 return super(NodeHandlerBase, cls).__new__(cls, *args, **kwargs)
             engine = sgtk.platform.current_engine()
             node_handlers = engine.get_setting("node_handlers")
             for handler in node_handlers:
                 if handler["node_type"] == cls.NODE_TYPE:
                     work_template = engine.get_template_by_name(handler["work_template"])
-                    setattr(cls, "work_template", work_template)
+                    setattr(cls, "_work_template", work_template)
                     publish_template = engine.get_template_by_name(handler["publish_template"])
-                    setattr(cls, "publish_template", publish_template)
-                    setattr(cls, "extra_args", handler["extra_args"])
+                    setattr(cls, "_publish_template", publish_template)
+                    setattr(cls, "_extra_args", handler["extra_args"])
         return super(NodeHandlerBase, cls).__new__(cls, *args, **kwargs)
 
     @staticmethod
@@ -45,6 +45,27 @@ class NodeHandlerBase(HookBaseClass):
             ".{method}(kwargs)"
         ).format(method=method_name)
         return callback_str
+
+    @property
+    def work_template(self):
+        return self._work_template
+
+    @property
+    def publish_template(self):
+        return self._publish_template
+
+    @property
+    def extra_args(self):
+        return self._extra_args
+        
+    def _get_template(self, template_name):
+        work_template_name = self.extra_args.get(template_name)
+        if not work_template_name:
+            raise sgtk.TankError("No workfile template name defined")
+        work_template = self.parent.get_template_by_name(work_template_name)
+        if not work_template:
+            raise sgtk.TankError("Can't find work template")
+        return work_template
 
     #############################################################################################
     # houdini callback overrides

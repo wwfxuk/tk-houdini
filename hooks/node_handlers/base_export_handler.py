@@ -9,8 +9,14 @@ import hou
 HookBaseClass = sgtk.get_hook_baseclass()
 
 
+class FieldInputError(Exception):
+    pass
+
+
 class ExportNodeHandler(HookBaseClass):
     
+    DEFAULT_ERROR_STRING = "'Element' not specified"
+
     OUTPUT_PARM = None
 
     OUTPUT_PARM_EXPR = 'chs("./sgtk_output")'
@@ -58,6 +64,12 @@ class ExportNodeHandler(HookBaseClass):
         output_parm.setExpression(self.OUTPUT_PARM_EXPR)
         output_parm.disable(True)
 
+    def _add_identifier_parm_template(self, templates):
+        pass
+
+    def _customise_parameter_group(self, parameter_group, sgtk_folder):
+        pass
+
     def create_sgtk_folder(self):
         sgtk_templates = []
 
@@ -74,47 +86,49 @@ class ExportNodeHandler(HookBaseClass):
             self.SGTK_ELEMENT,
             "Element",
             1,
-            script_callback=self.generate_callback_script_str("refresh_file_path"),
+            script_callback=self.generate_callback_script_str("validate_parm_and_refresh_path"),
             script_callback_language=hou.scriptLanguage.Python
         )
         sgtk_element.setConditional(hou.parmCondType.DisableWhen, "{ use_sgtk != 1 }")
+        sgtk_element.setJoinWithNext(True)
         sgtk_templates.append(sgtk_element)
 
         sgtk_location = hou.StringParmTemplate(
             self.SGTK_LOCATION,
             "Location",
             1,
-            script_callback=self.generate_callback_script_str("refresh_file_path"),
+            script_callback=self.generate_callback_script_str("validate_parm_and_refresh_path"),
             script_callback_language=hou.scriptLanguage.Python
         )
         sgtk_location.setConditional(
             hou.parmCondType.DisableWhen,
-            "{ use_sgtk != 1 } { sgtk_element == "" }"
+            '{ use_sgtk != 1 } { sgtk_element == "" }'
         )
-        sgtk_location.setJoinWithNext(True)
         sgtk_templates.append(sgtk_location)
 
         sgtk_variation = hou.StringParmTemplate(
             self.SGTK_VARIATION,
             "Variation",
             1,
-            script_callback=self.generate_callback_script_str("refresh_file_path"),
+            script_callback=self.generate_callback_script_str("validate_parm_and_refresh_path"),
             script_callback_language=hou.scriptLanguage.Python
         )
         sgtk_variation.setConditional(
             hou.parmCondType.DisableWhen,
-            "{ use_sgtk != 1 } { sgtk_element == "" }"
+            '{ use_sgtk != 1 } { sgtk_element == "" }'
         )
         sgtk_variation.setJoinWithNext(True)
         sgtk_templates.append(sgtk_variation)
+
+        self._add_identifier_parm_template(sgtk_templates)
 
         sgtk_output = hou.StringParmTemplate(
             self.SGTK_OUTPUT,
             "Output Picture",
             1,
+            default_value=(self.DEFAULT_ERROR_STRING,),
             is_hidden=True
         )
-        sgtk_output.setConditional(hou.parmCondType.DisableWhen, "{ use_sgtk != 1 }")
         sgtk_templates.append(sgtk_output)
 
         all_versions = hou.StringParmTemplate(
@@ -144,7 +158,10 @@ class ExportNodeHandler(HookBaseClass):
             script_callback=self.generate_callback_script_str("refresh_file_path_from_version"),
             script_callback_language=hou.scriptLanguage.Python
         )
-        refresh_button.setConditional(hou.parmCondType.DisableWhen, "{ use_sgtk != 1 }")
+        refresh_button.setConditional(
+            hou.parmCondType.DisableWhen,
+            '{ use_sgtk != 1 } { sgtk_element == "" }'
+        )
         refresh_button.setJoinWithNext(True)
         sgtk_templates.append(refresh_button)
 
@@ -164,6 +181,19 @@ class ExportNodeHandler(HookBaseClass):
             folder_type=hou.folderType.Simple
         )
         return sgtk_folder
+
+    def remove_sgtk_folder(self, node):
+        use_sgtk = node.parm(self.USE_SGTK)
+        use_sgtk.set(False)
+        self.enable_sgtk({"node": node})
+        tk_houdini = self.parent.import_module("tk_houdini")
+        utils = tk_houdini.utils
+        parameter_group = utils.wrap_node_parameter_group(node)
+        self._remove_sgtk_items_from_parm_group(parameter_group)
+        node.setParmTemplateGroup(parameter_group.build())
+
+    def _remove_sgtk_items_from_parm_group(self, parameter_group):
+        pass
 
     #############################################################################################
     # UI Callbacks
@@ -204,17 +234,20 @@ class ExportNodeHandler(HookBaseClass):
             return resolved
         return max(all_versions or [0]) + 1
 
-    def enable_sgtk(self, kwargs):
-        node = kwargs["node"]
-        use_sgtk = kwargs["parm"]
-        value = use_sgtk.eval()
+    def _enable_sgtk(self, node, sgtk_enabled):
         output_parm = node.parm(self.OUTPUT_PARM)
-        if value:
+        if sgtk_enabled:
             expression = self.OUTPUT_PARM_EXPR
             output_parm.setExpression(expression, replace_expression=True)
         else:
             output_parm.deleteAllKeyframes()
-        output_parm.disable(value)
+        output_parm.disable(sgtk_enabled)
+
+    def enable_sgtk(self, kwargs):
+        node = kwargs["node"]
+        use_sgtk = node.parm(self.USE_SGTK)
+        value = use_sgtk.eval()
+        self._enable_sgtk(node, value)
 
     def populate_versions(self, kwargs):
         node = kwargs["node"]
@@ -229,13 +262,7 @@ class ExportNodeHandler(HookBaseClass):
         update_version = sgtk_version.evalAsString() == self.NEXT_VERSION_STR
         self.refresh_file_path(kwargs, update_version=update_version)
 
-    def refresh_file_path(self, kwargs, update_version=True):
-        node = kwargs["node"]
-        sgtk_output = node.parm(self.SGTK_OUTPUT)
-
-        context = self.parent.context
-        fields = context.as_template_fields(self.work_template, validate=True)
-
+    def _update_template_fields(self, node, fields):
         fields["node"] = node.name()
         fields["SEQ"] = "FORMAT: $F"
 
@@ -256,6 +283,15 @@ class ExportNodeHandler(HookBaseClass):
 
         variation = sgtk_variation.evalAsString().strip() or None
         fields["variation"] = variation
+
+    def refresh_file_path(self, kwargs, update_version=True):
+        node = kwargs["node"]
+        sgtk_output = node.parm(self.SGTK_OUTPUT)
+
+        context = self.parent.context
+        fields = context.as_template_fields(self.work_template, validate=True)
+
+        self._update_template_fields(node, fields)
         
         all_versions = self._resolve_all_versions_from_fields(fields)
         sgtk_version = node.parm(self.SGTK_VERSION)
@@ -275,7 +311,18 @@ class ExportNodeHandler(HookBaseClass):
         fields["version"] = resolved_version
         try:
             new_path = self.work_template.apply_fields(fields)
-        except sgtk.TankError as error:
-            new_path = str(error)
+        except sgtk.TankError:
+            new_path = self.DEFAULT_ERROR_STRING
 
         sgtk_output.set(new_path)
+
+    def _validate_input(self, input_value):
+        match = re.match(r"^[a-zA-Z0-9]*$", input_value)
+        if not match:
+            raise FieldInputError("Input must be alphanumeric.")
+
+    def validate_parm_and_refresh_path(self, kwargs):
+        parm = kwargs["parm"]
+        value = parm.evalAsString().strip()
+        self._validate_input(value)
+        self.refresh_file_path(kwargs)
