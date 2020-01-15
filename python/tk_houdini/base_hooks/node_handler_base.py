@@ -35,7 +35,7 @@ class NodeHandlerBase(HookBaseClass):
                     setattr(cls, "_work_template", work_template)
                     publish_template = engine.get_template_by_name(handler["publish_template"])
                     setattr(cls, "_publish_template", publish_template)
-                    setattr(cls, "_extra_args", handler["extra_args"])
+                    setattr(cls, "extra_args", handler["extra_args"])
         return super(NodeHandlerBase, cls).__new__(cls, *args, **kwargs)
 
     @staticmethod
@@ -46,17 +46,11 @@ class NodeHandlerBase(HookBaseClass):
         ).format(method=method_name)
         return callback_str
 
-    @property
-    def work_template(self):
+    def get_work_template(self, node):
         return self._work_template
 
-    @property
-    def publish_template(self):
+    def get_publish_template(self, node):
         return self._publish_template
-
-    @property
-    def extra_args(self):
-        return self._extra_args
         
     def _get_template(self, template_name):
         work_template_name = self.extra_args.get(template_name)
@@ -66,6 +60,16 @@ class NodeHandlerBase(HookBaseClass):
         if not work_template:
             raise sgtk.TankError("Can't find work template")
         return work_template
+
+    #############################################################################################
+    # Utilities
+    #############################################################################################
+
+    def remove_sgtk_parms(self, node):
+        pass
+
+    def populate_sgtk_parms(self, node, use_next_version=True):
+        pass
 
     #############################################################################################
     # houdini callback overrides

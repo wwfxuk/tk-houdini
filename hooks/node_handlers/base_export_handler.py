@@ -1,5 +1,7 @@
+from functools import partial
 import glob
 import itertools
+import os
 import re
 
 import sgtk
@@ -37,17 +39,7 @@ class ExportNodeHandler(HookBaseClass):
     #############################################################################################
 
     def on_created(self, node=None):
-        if not node:
-            return
-        tk_houdini = self.parent.import_module("tk_houdini")
-        utils = tk_houdini.utils
-        parameter_group = utils.wrap_node_parameter_group(node)
-
-        self.setup_parms(node)
-        sgtk_folder = self.create_sgtk_folder()
-        self._customise_parameter_group(parameter_group, sgtk_folder)
-
-        node.setParmTemplateGroup(parameter_group.build())
+        self._add_sgtk_parms(node)
 
     def on_name_changed(self, node=None):
         if not node:
@@ -59,18 +51,31 @@ class ExportNodeHandler(HookBaseClass):
     # UI customisation
     #############################################################################################
 
+    def _add_sgtk_parms(self, node):
+        if not node:
+            return
+        tk_houdini = self.parent.import_module("tk_houdini")
+        utils = tk_houdini.utils
+        parameter_group = utils.wrap_node_parameter_group(node)
+
+        self.setup_parms(node)
+        sgtk_folder = self.create_sgtk_folder(node)
+        self._customise_parameter_group(node, parameter_group, sgtk_folder)
+
+        node.setParmTemplateGroup(parameter_group.build())
+
     def setup_parms(self, node):
         output_parm = node.parm(self.OUTPUT_PARM)
         output_parm.setExpression(self.OUTPUT_PARM_EXPR)
         output_parm.disable(True)
 
-    def _add_identifier_parm_template(self, templates):
+    def _add_identifier_parm_template(self, node, templates):
         pass
 
-    def _customise_parameter_group(self, parameter_group, sgtk_folder):
+    def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
         pass
 
-    def create_sgtk_folder(self):
+    def create_sgtk_folder(self, node):
         sgtk_templates = []
 
         use_sgtk = hou.ToggleParmTemplate(
@@ -120,7 +125,7 @@ class ExportNodeHandler(HookBaseClass):
         sgtk_variation.setJoinWithNext(True)
         sgtk_templates.append(sgtk_variation)
 
-        self._add_identifier_parm_template(sgtk_templates)
+        self._add_identifier_parm_template(node, sgtk_templates)
 
         sgtk_output = hou.StringParmTemplate(
             self.SGTK_OUTPUT,
@@ -182,19 +187,6 @@ class ExportNodeHandler(HookBaseClass):
         )
         return sgtk_folder
 
-    def remove_sgtk_folder(self, node):
-        use_sgtk = node.parm(self.USE_SGTK)
-        use_sgtk.set(False)
-        self.enable_sgtk({"node": node})
-        tk_houdini = self.parent.import_module("tk_houdini")
-        utils = tk_houdini.utils
-        parameter_group = utils.wrap_node_parameter_group(node)
-        self._remove_sgtk_items_from_parm_group(parameter_group)
-        node.setParmTemplateGroup(parameter_group.build())
-
-    def _remove_sgtk_items_from_parm_group(self, parameter_group):
-        pass
-
     #############################################################################################
     # UI Callbacks
     #############################################################################################
@@ -206,22 +198,26 @@ class ExportNodeHandler(HookBaseClass):
         all_versions = map(int, all_versions)
         return all_versions
 
-    def _resolve_all_versions_from_fields(self, fields):
-        versions = []
+    def _resolve_all_versions_from_fields(self, node, fields):
+        versions = set()
         if fields:
-            if "version" in fields:
-                del fields["version"]
+            if "version" not in fields:
+                fields["version"] = 1
             if "name" not in fields:
                 return versions
-            version_paths = self.parent.sgtk.abstract_paths_from_template(
-                self.work_template,
-                fields
-            )
-            for version_path in version_paths:
-                if not glob.glob(re.sub(r"\$F\d", r"*", version_path)):
-                    continue
-                fields = self.work_template.get_fields(version_path)
-                versions.append(int(fields["version"]))
+
+            def repl(match):
+                return "{}*{}".format(match.group(1), match.group(3))
+
+            path = self.get_work_template(node).apply_fields(fields)
+            glob_path = re.sub(r"([/_]v)(\d{3})([/\.])", repl, path)
+            glob_path = re.sub(r"\$F\d", r"*", glob_path)
+            version_paths = glob.iglob(glob_path)
+            for key, paths in itertools.groupby(version_paths, key=os.path.dirname):
+                version_path = paths.next()
+                fields = self.get_work_template(node).get_fields(version_path)
+                versions.add(int(fields["version"]))
+            versions = list(versions)
             versions.sort()
         return versions
 
@@ -234,13 +230,24 @@ class ExportNodeHandler(HookBaseClass):
             return resolved
         return max(all_versions or [0]) + 1
 
+    def _replace_frame_numbers(self, path):
+        def repl(match):
+            return ".$F{}.".format(len(match.group(1)))
+
+        return re.sub(r"\.(\d+)\.", repl, path)
+
+    def _remove_expression_for_path(self, parm):
+        parm.deleteAllKeyframes()
+        path = parm.evalAsString()
+        parm.set(self._replace_frame_numbers(path))
+
     def _enable_sgtk(self, node, sgtk_enabled):
         output_parm = node.parm(self.OUTPUT_PARM)
         if sgtk_enabled:
             expression = self.OUTPUT_PARM_EXPR
             output_parm.setExpression(expression, replace_expression=True)
         else:
-            output_parm.deleteAllKeyframes()
+            self._remove_expression_for_path(output_parm)
         output_parm.disable(sgtk_enabled)
 
     def enable_sgtk(self, kwargs):
@@ -289,11 +296,11 @@ class ExportNodeHandler(HookBaseClass):
         sgtk_output = node.parm(self.SGTK_OUTPUT)
 
         context = self.parent.context
-        fields = context.as_template_fields(self.work_template, validate=True)
+        fields = context.as_template_fields(self.get_work_template(node), validate=True)
 
         self._update_template_fields(node, fields)
         
-        all_versions = self._resolve_all_versions_from_fields(fields)
+        all_versions = self._resolve_all_versions_from_fields(node, fields)
         sgtk_version = node.parm(self.SGTK_VERSION)
         if all_versions != self._get_all_versions(node):
             all_versions_str = ",".join(map(str, all_versions))
@@ -310,7 +317,7 @@ class ExportNodeHandler(HookBaseClass):
         
         fields["version"] = resolved_version
         try:
-            new_path = self.work_template.apply_fields(fields)
+            new_path = self.get_work_template(node).apply_fields(fields)
         except sgtk.TankError:
             new_path = self.DEFAULT_ERROR_STRING
 
@@ -326,3 +333,65 @@ class ExportNodeHandler(HookBaseClass):
         value = parm.evalAsString().strip()
         self._validate_input(value)
         self.refresh_file_path(kwargs)
+
+    #############################################################################################
+    # Utilities
+    #############################################################################################
+
+    def _remove_sgtk_items_from_parm_group(self, parameter_group):
+        pass
+
+    def remove_sgtk_parms(self, node):
+        use_sgtk = node.parm(self.USE_SGTK)
+        use_sgtk.set(False)
+        self._enable_sgtk(node, False)
+        tk_houdini = self.parent.import_module("tk_houdini")
+        utils = tk_houdini.utils
+        parameter_group = utils.wrap_node_parameter_group(node)
+        self._remove_sgtk_items_from_parm_group(parameter_group)
+        node.setParmTemplateGroup(parameter_group.build())
+
+    def _get_template_for_file_path(self, node, file_path):
+        return self.get_work_template(node)
+    
+    def _populate_from_fields(self, node, fields):
+        sgtk_element = node.parm(self.SGTK_ELEMENT)
+        sgtk_element.set(fields.get("name", ""))
+
+        sgtk_location = node.parm(self.SGTK_LOCATION)
+        sgtk_location.set(fields.get("location", ""))
+
+        sgtk_variation = node.parm(self.SGTK_VARIATION)
+        sgtk_variation.set(fields.get("variation", ""))
+
+    def _set_version(self, node, current_version):
+        sgtk_version = node.parm(self.SGTK_VERSION)
+        entries = sgtk_version.menuItems()
+        if current_version not in entries:
+            index = len(entries)
+        else:
+            index = entries.index(current_version)
+        sgtk_version.set(index)
+
+    def _populate_from_file_path(self, node, file_path, use_next_version):
+        template = self._get_template_for_file_path(node, file_path)
+        fields = template.validate_and_get_fields(file_path)
+        if not fields:
+            use_sgtk = node.parm(self.USE_SGTK)
+            use_sgtk.set(False)
+            self._enable_sgtk(node, False)
+            output_parm = node.parm(self.OUTPUT_PARM)
+            output_parm.set(file_path)
+        else:
+            current_version = str(fields.get("version", self.NEXT_VERSION_STR))
+            self._populate_from_fields(node, fields)
+            self.refresh_file_path({"node": node})
+            if not use_next_version:
+                self._set_version(node, current_version)
+                self.refresh_file_path({"node": node}, update_version=False)
+
+    def populate_sgtk_parms(self, node, use_next_version=True):
+        output_parm = node.parm(self.OUTPUT_PARM)
+        original_file_path = output_parm.evalAsString()
+        self._add_sgtk_parms(node)
+        self._populate_from_file_path(node, original_file_path, use_next_version)

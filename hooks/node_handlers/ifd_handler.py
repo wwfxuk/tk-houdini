@@ -41,7 +41,7 @@ class IfdNodeHandler(HookBaseClass):
     def _get_template_fields_from(self, node, template):
         sgtk_output = node.parm(self.SGTK_OUTPUT)
         filepath = sgtk_output.evalAsString()
-        fields = self.work_template.validate_and_get_fields(filepath)
+        fields = self.get_work_template(node).validate_and_get_fields(filepath)
         if not fields:
             raise sgtk.TankError("Can not extract fields from file path")
         return fields
@@ -55,15 +55,20 @@ class IfdNodeHandler(HookBaseClass):
             if channel:
                 fields["channel"] = channel
             filepath = template.apply_fields(fields)
-        except sgtk.TankError as error:
-            return str(error)
+        except sgtk.TankError:
+            return "'Channel name' not specified"
         return filepath
+
+    def validate_channel(self, kwargs):
+        parm = kwargs["parm"]
+        value = parm.evalAsString().strip()
+        self._validate_input(value)
 
     #############################################################################################
     # Overriden methods
     #############################################################################################
 
-    def _add_identifier_parm_template(self, templates):
+    def _add_identifier_parm_template(self, node, templates):
         sgtk_pass_name = hou.StringParmTemplate(
             self.SGTK_PASS_NAME,
             "Render Pass",
@@ -75,26 +80,7 @@ class IfdNodeHandler(HookBaseClass):
         sgtk_pass_name.setConditional(hou.parmCondType.DisableWhen, "{ use_sgtk != 1 }")
         templates.append(sgtk_pass_name)
 
-    def _remove_sgtk_items_from_parm_group(self, parameter_group):
-        images_folder = parameter_group.get("images6")
-        index = images_folder.index_of_template(self.SGTK_FOLDER)
-        images_folder.pop_template(index)
-        
-        image_planes_folder = images_folder.get("output6_1")
-        vm_numaux = image_planes_folder.get(self.VM_NUMAUX)
-        vm_numaux_template = vm_numaux.template
-        vm_numaux_template.setScriptCallback("")
-
-        deep_folder = images_folder.get("output6_2")
-        index = deep_folder.index_of_template(self.SGTK_DEEP_EXT)
-        deep_folder.pop_template(index)
-        
-        cryptomatte_folder = images_folder.get("output6_3")
-        vm_cryptolayers = cryptomatte_folder.get(self.VM_CRYPTOLAYERS)
-        vm_cryptolayers_template = vm_cryptolayers.template
-        vm_cryptolayers_template.setScriptCallback("")
-
-    def _customise_parameter_group(self, parameter_group, sgtk_folder):
+    def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
         # Insert sgtk folder before vm_picture
         images_folder = parameter_group.get("images6")
         index = images_folder.index_of_template(self.OUTPUT_PARM)
@@ -108,6 +94,15 @@ class IfdNodeHandler(HookBaseClass):
             self.generate_callback_script_str("setup_extra_image_planes")
         )
         vm_numaux_template.setScriptCallbackLanguage(hou.scriptLanguage.Python)
+
+        vm_channel_plane = vm_numaux.get("vm_channel_plane#")
+        vm_channel_plane_template = vm_channel_plane.template
+        tags = vm_channel_plane_template.tags()
+        tags["script_callback"] = self.generate_callback_script_str(
+            "validate_channel"
+        )
+        tags["script_callback_language"] = "python"
+        vm_channel_plane_template.setTags(tags)
 
         # Add expressions to deep outputs and an extension choice drop down
         deep_folder = images_folder.get("output6_2")
@@ -222,7 +217,7 @@ class IfdNodeHandler(HookBaseClass):
                     replace_expression=True
                 )
             else:
-                parm.deleteAllKeyframes()
+                self._remove_expression_for_path(parm)
 
     #############################################################################################
     # Cryptomatte
@@ -260,7 +255,7 @@ class IfdNodeHandler(HookBaseClass):
                 replace_expression=True
             )
         else:
-            vm_cryptolayeroutput.deleteAllKeyframes()
+            self._remove_expression_for_path(vm_cryptolayeroutput)
             vm_cryptolayersidecar.deleteAllKeyframes()
     
     def setup_cryptolayeroutputs(self, kwargs):
@@ -302,4 +297,47 @@ class IfdNodeHandler(HookBaseClass):
                 replace_expression=True
             )
         else:
-            parm.deleteAllKeyframes()
+            self._remove_expression_for_path(parm)
+    
+    #############################################################################################
+    # Utilities
+    #############################################################################################
+
+    def _remove_sgtk_items_from_parm_group(self, parameter_group):
+        images_folder = parameter_group.get("images6")
+        index = images_folder.index_of_template(self.SGTK_FOLDER)
+        images_folder.pop_template(index)
+        
+        image_planes_folder = images_folder.get("output6_1")
+        vm_numaux = image_planes_folder.get(self.VM_NUMAUX)
+        vm_numaux_template = vm_numaux.template
+        vm_numaux_template.setScriptCallback("")
+
+        deep_folder = images_folder.get("output6_2")
+        index = deep_folder.index_of_template(self.SGTK_DEEP_EXT)
+        deep_folder.pop_template(index)
+        
+        cryptomatte_folder = images_folder.get("output6_3")
+        vm_cryptolayers = cryptomatte_folder.get(self.VM_CRYPTOLAYERS)
+        vm_cryptolayers_template = vm_cryptolayers.template
+        vm_cryptolayers_template.setScriptCallback("")
+
+    def _populate_from_fields(self, node, fields):
+        super(IfdNodeHandler, self)._populate_from_fields(node, fields)
+        sgtk_pass_name = node.parm(self.SGTK_PASS_NAME)
+        sgtk_pass_name.set(fields.get("identifier", "beauty"))
+
+    def populate_sgtk_parms(self, node, use_next_version=True):
+        vm_dcmfilename = node.parm(self.VM_DCMFILENAME)
+        dcm_file_path = vm_dcmfilename.evalAsString()
+
+        super(IfdNodeHandler, self).populate_sgtk_parms(node, use_next_version)
+        
+        dcm_template = self._get_template(self.DCM_WORK_TEMPLATE)
+        dcm_fields = dcm_template.get_fields(dcm_file_path)
+        if dcm_fields:
+            sgtk_deep_extension = node.parm(self.SGTK_DEEP_EXT)
+            entries = sgtk_deep_extension.menuItems()
+            ext = dcm_fields.get("extension", "rat")
+            index = entries.index(ext)
+            sgtk_deep_extension.set(index)

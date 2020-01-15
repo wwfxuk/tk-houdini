@@ -908,3 +908,10 @@ class HoudiniEngine(sgtk.platform.Engine):
                     )
                     break
         return self.__node_handlers[node_type]
+
+    def remove_sgtk_parms(self, node):
+        handler = self.node_handler(node)
+        handler.remove_sgtk_parms(node)
+
+    def remove_all_sgtk_parms(self):
+        pass
