@@ -328,10 +328,16 @@ class ExportNodeHandler(HookBaseClass):
         if not match:
             raise FieldInputError("Input must be alphanumeric.")
 
-    def validate_parm_and_refresh_path(self, kwargs):
-        parm = kwargs["parm"]
+    def validate_parm(self, parm):
         value = parm.evalAsString().strip()
-        self._validate_input(value)
+        try:
+            self._validate_input(value)
+        except FieldInputError:
+            parm.set("")
+            raise
+
+    def validate_parm_and_refresh_path(self, kwargs):
+        self.validate_parm(kwargs["parm"])
         self.refresh_file_path(kwargs)
 
     #############################################################################################

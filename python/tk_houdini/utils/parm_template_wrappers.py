@@ -63,6 +63,9 @@ class ParmFolder(Parm):
         
     def __len__(self):
         return len(self.__children)
+
+    def __contains__(self, name):
+        return name in self.__child_names
         
     def _child_templates(self):
         return [child.build() for child in self]
