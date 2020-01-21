@@ -21,8 +21,6 @@ class ExportNodeHandler(HookBaseClass):
 
     OUTPUT_PARM = None
 
-    OUTPUT_PARM_EXPR = 'chs("./sgtk_output")'
-    SGTK_OUTPUT = "sgtk_output"
     SGTK_ELEMENT = "sgtk_element"
     SGTK_LOCATION = "sgtk_location"
     SGTK_VARIATION = "sgtk_variation"
@@ -34,6 +32,9 @@ class ExportNodeHandler(HookBaseClass):
     USE_SGTK = "use_sgtk"
     NEXT_VERSION_STR = "<NEXT>"
 
+    OPTIONAL_KEY_PARM_TEMPLATE = "sgtk_optional_key_{}"
+    PRESENT_OPTIONAL_KEYS = "sgtk_present_optional_keys"
+
     #############################################################################################
     # houdini callback overrides
     #############################################################################################
@@ -44,12 +45,38 @@ class ExportNodeHandler(HookBaseClass):
     def on_name_changed(self, node=None):
         if not node:
             return
-        if node.parm(self.SGTK_OUTPUT):
-            self.refresh_file_path({"node": node})
+        parm = node.parm(self.USE_SGTK)
+        if parm and parm.eval():
+            self._refresh_file_path(node)
 
     #############################################################################################
     # UI customisation
     #############################################################################################
+
+    def _add_optional_key_parms(self, node, parameter_group):
+        if self.PRESENT_OPTIONAL_KEYS in parameter_group:
+            return
+        template = self.get_work_template(node)
+
+        templates = []
+        for key_name in self.get_optional_keys(template):
+            parm_name = self.OPTIONAL_KEY_PARM_TEMPLATE.format(key_name)
+            parm_template = hou.ToggleParmTemplate(
+                parm_name,
+                key_name,
+                default_value=True,
+                is_hidden=True
+            )
+            templates.append(parm_template)
+
+        folder = hou.FolderParmTemplate(
+            self.PRESENT_OPTIONAL_KEYS,
+            "present optional keys",
+            parm_templates=templates,
+            folder_type=hou.folderType.Simple,
+            is_hidden=True
+        )
+        parameter_group.append_template(folder)
 
     def _add_sgtk_parms(self, node):
         if not node:
@@ -58,6 +85,7 @@ class ExportNodeHandler(HookBaseClass):
         utils = tk_houdini.utils
         parameter_group = utils.wrap_node_parameter_group(node)
 
+        self._add_optional_key_parms(node, parameter_group)
         self.setup_parms(node)
         sgtk_folder = self.create_sgtk_folder(node)
         self._customise_parameter_group(node, parameter_group, sgtk_folder)
@@ -66,8 +94,8 @@ class ExportNodeHandler(HookBaseClass):
 
     def setup_parms(self, node):
         output_parm = node.parm(self.OUTPUT_PARM)
-        output_parm.setExpression(self.OUTPUT_PARM_EXPR)
-        output_parm.disable(True)
+        output_parm.set(self.DEFAULT_ERROR_STRING)
+        output_parm.lock(True)
 
     def _add_identifier_parm_template(self, node, templates):
         pass
@@ -126,15 +154,6 @@ class ExportNodeHandler(HookBaseClass):
         sgtk_templates.append(sgtk_variation)
 
         self._add_identifier_parm_template(node, sgtk_templates)
-
-        sgtk_output = hou.StringParmTemplate(
-            self.SGTK_OUTPUT,
-            "Output Picture",
-            1,
-            default_value=(self.DEFAULT_ERROR_STRING,),
-            is_hidden=True
-        )
-        sgtk_templates.append(sgtk_output)
 
         all_versions = hou.StringParmTemplate(
             self.SGTK_ALL_VERSIONS,
@@ -243,12 +262,7 @@ class ExportNodeHandler(HookBaseClass):
 
     def _enable_sgtk(self, node, sgtk_enabled):
         output_parm = node.parm(self.OUTPUT_PARM)
-        if sgtk_enabled:
-            expression = self.OUTPUT_PARM_EXPR
-            output_parm.setExpression(expression, replace_expression=True)
-        else:
-            self._remove_expression_for_path(output_parm)
-        output_parm.disable(sgtk_enabled)
+        output_parm.lock(sgtk_enabled)
 
     def enable_sgtk(self, kwargs):
         node = kwargs["node"]
@@ -267,7 +281,7 @@ class ExportNodeHandler(HookBaseClass):
         node = kwargs["node"]
         sgtk_version = node.parm(self.SGTK_VERSION)
         update_version = sgtk_version.evalAsString() == self.NEXT_VERSION_STR
-        self.refresh_file_path(kwargs, update_version=update_version)
+        self._refresh_file_path(node, update_version=update_version)
 
     def _update_template_fields(self, node, fields):
         fields["node"] = node.name()
@@ -291,14 +305,20 @@ class ExportNodeHandler(HookBaseClass):
         variation = sgtk_variation.evalAsString().strip() or None
         fields["variation"] = variation
 
-    def refresh_file_path(self, kwargs, update_version=True):
-        node = kwargs["node"]
-        sgtk_output = node.parm(self.SGTK_OUTPUT)
+    def _update_optional_keys(self, node, template, fields):
+        for key_name in self.get_optional_keys(template):
+            parm = node.parm(self.OPTIONAL_KEY_PARM_TEMPLATE.format(key_name))
+            parm.set(bool(fields.get(key_name)))
+            
+    def _refresh_file_path(self, node, update_version=True):
+        output_parm = node.parm(self.OUTPUT_PARM)
 
         context = self.parent.context
-        fields = context.as_template_fields(self.get_work_template(node), validate=True)
+        template = self.get_work_template(node)
+        fields = context.as_template_fields(template, validate=True)
 
         self._update_template_fields(node, fields)
+        self._update_optional_keys(node, template, fields)
         
         all_versions = self._resolve_all_versions_from_fields(node, fields)
         sgtk_version = node.parm(self.SGTK_VERSION)
@@ -321,7 +341,13 @@ class ExportNodeHandler(HookBaseClass):
         except sgtk.TankError:
             new_path = self.DEFAULT_ERROR_STRING
 
-        sgtk_output.set(new_path)
+        output_parm.lock(False)
+        output_parm.set(new_path)
+        output_parm.lock(True)
+
+    def refresh_file_path(self, kwargs):
+        node = kwargs["node"]
+        self._refresh_file_path(node)
 
     def _validate_input(self, input_value):
         match = re.match(r"^[a-zA-Z0-9]*$", input_value)
@@ -337,18 +363,29 @@ class ExportNodeHandler(HookBaseClass):
             raise
 
     def validate_parm_and_refresh_path(self, kwargs):
-        self.validate_parm(kwargs["parm"])
-        self.refresh_file_path(kwargs)
+        try:
+            self.validate_parm(kwargs["parm"])
+        finally:
+            self._refresh_file_path(kwargs["node"])
 
     #############################################################################################
     # Utilities
     #############################################################################################
+
+    @staticmethod
+    def get_optional_keys(template):
+        return filter(
+            template.is_optional,
+            template.keys.keys()
+        )
 
     def _remove_sgtk_items_from_parm_group(self, parameter_group):
         pass
 
     def remove_sgtk_parms(self, node):
         use_sgtk = node.parm(self.USE_SGTK)
+        if not use_sgtk:
+            return False
         use_sgtk.set(False)
         self._enable_sgtk(node, False)
         tk_houdini = self.parent.import_module("tk_houdini")
@@ -356,6 +393,7 @@ class ExportNodeHandler(HookBaseClass):
         parameter_group = utils.wrap_node_parameter_group(node)
         self._remove_sgtk_items_from_parm_group(parameter_group)
         node.setParmTemplateGroup(parameter_group.build())
+        return True
 
     def _get_template_for_file_path(self, node, file_path):
         return self.get_work_template(node)
@@ -379,9 +417,20 @@ class ExportNodeHandler(HookBaseClass):
             index = entries.index(current_version)
         sgtk_version.set(index)
 
+    def _get_skip_keys(self, node, template):
+        skip_keys = []
+        for key_name in self.get_optional_keys(template):
+            parm = node.parm(self.OPTIONAL_KEY_PARM_TEMPLATE.format(key_name))
+            if not parm:
+                continue
+            if not parm.eval():
+                skip_keys.append(key_name)
+        return skip_keys
+
     def _populate_from_file_path(self, node, file_path, use_next_version):
         template = self._get_template_for_file_path(node, file_path)
-        fields = template.validate_and_get_fields(file_path)
+        skip_keys = self._get_skip_keys(node, template)
+        fields = template.validate_and_get_fields(file_path, skip_keys=skip_keys)
         if not fields:
             use_sgtk = node.parm(self.USE_SGTK)
             use_sgtk.set(False)
@@ -391,13 +440,17 @@ class ExportNodeHandler(HookBaseClass):
         else:
             current_version = str(fields.get("version", self.NEXT_VERSION_STR))
             self._populate_from_fields(node, fields)
-            self.refresh_file_path({"node": node})
+            self._refresh_file_path(node)
             if not use_next_version:
                 self._set_version(node, current_version)
-                self.refresh_file_path({"node": node}, update_version=False)
+                self._refresh_file_path(node, update_version=False)
 
     def populate_sgtk_parms(self, node, use_next_version=True):
+        use_sgtk = node.parm(self.USE_SGTK)
+        if use_sgtk:
+            return False
         output_parm = node.parm(self.OUTPUT_PARM)
         original_file_path = output_parm.evalAsString()
         self._add_sgtk_parms(node)
         self._populate_from_file_path(node, original_file_path, use_next_version)
+        return True
