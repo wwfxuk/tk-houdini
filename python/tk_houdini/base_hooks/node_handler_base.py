@@ -1,3 +1,5 @@
+import itertools
+
 import sgtk
 
 
@@ -8,20 +10,14 @@ class NodeHandlerBase(HookBaseClass):
 
     NODE_TYPE = None
 
-    OUTPUT_PARM = None
+    VERSION_POLICIES = []
 
-    OUTPUT_PARM_EXPR = 'chs("./sgtk_output")'
-    SGTK_OUTPUT = "sgtk_output"
-    SGTK_ELEMENT = "sgtk_element"
-    SGTK_LOCATION = "sgtk_location"
-    SGTK_VARIATION = "sgtk_variation"
     SGTK_ALL_VERSIONS = "sgtk_all_versions"
     SGTK_VERSION = "sgtk_version"
     SGTK_REFRESH_VERSIONS = "sgtk_refresh_versions"
     SGTK_RESOLVED_VERSION = "sgtk_resolved_version"
     SGTK_FOLDER = "sgtk_folder"
     USE_SGTK = "use_sgtk"
-    NEXT_VERSION_STR = "<NEXT>"
 
     def __new__(cls, *args, **kwargs):
         if cls.NODE_TYPE:
@@ -53,30 +49,53 @@ class NodeHandlerBase(HookBaseClass):
         return self._publish_template
         
     def _get_template(self, template_name):
-        work_template_name = self.extra_args.get(template_name)
-        if not work_template_name:
-            raise sgtk.TankError("No workfile template name defined")
-        work_template = self.parent.get_template_by_name(work_template_name)
-        if not work_template:
-            raise sgtk.TankError("Can't find work template")
-        return work_template
+        template_name = self.extra_args.get(template_name)
+        if not template_name:
+            raise sgtk.TankError("No template name defined")
+        template = self.parent.get_template_by_name(template_name)
+        if not template:
+            raise sgtk.TankError("Can't find template")
+        return template
 
     #############################################################################################
     # Utilities
     #############################################################################################
 
-    def remove_sgtk_parms(self, node):
-        pass
+    def _remove_sgtk_items_from_parm_group(self, parameter_group):
+        raise NotImplementedError("'_remove_sgtk_items_from_parm_group' needs to be implemented")
 
-    def populate_sgtk_parms(self, node, use_next_version=True):
-        pass
+    def remove_sgtk_parms(self, node):
+        use_sgtk = node.parm(self.USE_SGTK)
+        if not use_sgtk:
+            return False
+        use_sgtk.set(False)
+        self._enable_sgtk(node, False)
+        tk_houdini = self.parent.import_module("tk_houdini")
+        utils = tk_houdini.utils
+        parameter_group = utils.wrap_node_parameter_group(node)
+        self._remove_sgtk_items_from_parm_group(parameter_group)
+        node.setParmTemplateGroup(parameter_group.build())
+        return True
+
+    def _populate_from_file_path(self, node, file_path, use_next_version):
+        raise NotImplementedError("'_populate_from_file_path' needs to be implemented")
+
+    def restore_sgtk_parms(self, node, use_next_version=True):
+        use_sgtk = node.parm(self.USE_SGTK)
+        if use_sgtk:
+            return False
+        output_parm = node.parm(self.OUTPUT_PARM)
+        original_file_path = output_parm.evalAsString()
+        self.add_sgtk_parms(node)
+        self._populate_from_file_path(node, original_file_path, use_next_version)
+        return True
 
     #############################################################################################
     # houdini callback overrides
     #############################################################################################
     
     def on_created(self, node=None):
-        pass
+        self.add_sgtk_parms(node)
 
     def on_deleted(self, node=None):
         pass
@@ -98,3 +117,145 @@ class NodeHandlerBase(HookBaseClass):
 
     def after_last_delete(self, node=None):
         pass
+
+    #############################################################################################
+    # UI customisation
+    #############################################################################################
+        
+    def _get_parameter_group(self, node):
+        if not node:
+            return
+        tk_houdini = self.parent.import_module("tk_houdini")
+        utils = tk_houdini.utils
+        return utils.wrap_node_parameter_group(node)
+
+    def _setup_parms(self, node):
+        pass
+
+    def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
+        raise NotImplementedError("'_customise_parameter_group' needs to be implemented")
+
+    def _create_sgtk_parms(self, node, hou=None):
+        if not hou:
+            import hou
+        templates = []
+        use_sgtk = hou.ToggleParmTemplate(
+            self.USE_SGTK,
+            "Use Shotgun",
+            default_value=True,
+            script_callback=self.generate_callback_script_str("enable_sgtk"),
+            script_callback_language=hou.scriptLanguage.Python
+        )
+        templates.append(use_sgtk)
+        return templates
+    
+    def _create_sgtk_folder(self, node, hou=None):
+        if not hou:
+            import hou
+        sgtk_templates = self._create_sgtk_parms(node)
+        
+        all_versions = hou.StringParmTemplate(
+            self.SGTK_ALL_VERSIONS,
+            "All Versions",
+            1,
+            is_hidden=True
+        )
+        sgtk_templates.append(all_versions)
+
+        version = hou.MenuParmTemplate(
+            self.SGTK_VERSION,
+            "Version",
+            tuple(),
+            item_generator_script=self.generate_callback_script_str("populate_versions"),
+            item_generator_script_language=hou.scriptLanguage.Python,
+            script_callback=self.generate_callback_script_str("refresh_file_path_from_version"),
+            script_callback_language=hou.scriptLanguage.Python
+        )
+        version.setConditional(hou.parmCondType.DisableWhen, "{ use_sgtk != 1 }")
+        version.setJoinWithNext(True)
+        sgtk_templates.append(version)
+
+        refresh_button = hou.ButtonParmTemplate(
+            self.SGTK_REFRESH_VERSIONS,
+            "Refresh Versions",
+            script_callback=self.generate_callback_script_str("refresh_file_path_from_version"),
+            script_callback_language=hou.scriptLanguage.Python
+        )
+        refresh_button.setConditional(
+            hou.parmCondType.DisableWhen,
+            '{ use_sgtk != 1 } { sgtk_element == "" }'
+        )
+        refresh_button.setJoinWithNext(True)
+        sgtk_templates.append(refresh_button)
+
+        resolved_version = hou.StringParmTemplate(
+            self.SGTK_RESOLVED_VERSION,
+            "Resolved Version",
+            1,
+            default_value=("1",)
+        )
+        resolved_version.setConditional(hou.parmCondType.DisableWhen, "{ sgtk_version != -1 }")
+        sgtk_templates.append(resolved_version)
+        
+        sgtk_folder = hou.FolderParmTemplate(
+            self.SGTK_FOLDER,
+            "SGTK",
+            parm_templates=sgtk_templates,
+            folder_type=hou.folderType.Simple
+        )
+        return sgtk_folder
+
+    def _set_up_node(self, node, parameter_group):
+        self._setup_parms(node)
+        sgtk_folder = self._create_sgtk_folder(node)
+        self._customise_parameter_group(node, parameter_group, sgtk_folder)
+        node.setParmTemplateGroup(parameter_group.build())
+
+    def add_sgtk_parms(self, node):
+        parameter_group = self._get_parameter_group(node)
+        if not parameter_group:
+            return
+        self._set_up_node(node, parameter_group)
+
+    #############################################################################################
+    # UI Callbacks
+    #############################################################################################
+    
+    def _enable_sgtk(self, node, sgtk_enabled):
+        pass
+
+    def enable_sgtk(self, kwargs):
+        node = kwargs["node"]
+        use_sgtk = node.parm(self.USE_SGTK)
+        value = use_sgtk.eval()
+        self._enable_sgtk(node, value)
+
+    def _get_all_versions(self, node):
+        sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
+        all_versions_str = sgtk_all_versions.evalAsString()
+        all_versions = filter(None, all_versions_str.split(","))
+        all_versions = map(int, all_versions)
+        return all_versions
+
+    def _populate_versions(self, node):
+        all_versions = self._get_all_versions(node)
+        versions = map(str, all_versions)
+        versions.extend(self.VERSION_POLICIES)
+        return list(itertools.chain(*zip(versions, versions)))
+
+    def populate_versions(self, kwargs):
+        node = kwargs["node"]
+        return self._populate_versions(node)
+
+    def _refresh_file_path(self, node, update_version=True):
+        pass
+
+    def refresh_file_path(self, kwargs):
+        node = kwargs["node"]
+        self._refresh_file_path(node)
+
+    def refresh_file_path_from_version(self, kwargs):
+        node = kwargs["node"]
+        sgtk_version = node.parm(self.SGTK_VERSION)
+        update_version = sgtk_version.evalAsString() in self.VERSION_POLICIES
+        self._refresh_file_path(node, update_version=update_version)

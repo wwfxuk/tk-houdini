@@ -1,21 +1,12 @@
-def run_on_name_changed(node, node_type):
+def run_on_name_changed(node):
     try:
         import sgtk
     except ImportError:
         pass
     engine = sgtk.platform.current_engine()
-    node_handlers = engine.get_setting("node_handlers")
-    tk_houdini = engine.import_module("tk_houdini")
-    base_class = tk_houdini.base_hooks.NodeHandlerBase
-    for handler in node_handlers:
-        if handler["node_type"] == node_type:
-            engine.execute_hook_expression(
-                handler["hook"],
-                "on_name_changed",
-                base_class=base_class,
-                node=node
-            )
-            break
+    handler = engine.node_handler(node)
+    if handler:
+        handler.on_name_changed(node=node)
 
 
-run_on_name_changed(kwargs["node"], kwargs["type"].name())
+run_on_name_changed(kwargs["node"])

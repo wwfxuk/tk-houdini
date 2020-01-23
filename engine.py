@@ -618,6 +618,9 @@ class HoudiniEngine(sgtk.platform.Engine):
         # add the function as an event loop callback
         hou.ui.addEventLoopCallback(run_when_idle)
 
+    def post_context_change(self, old_context, new_context):
+        self.__node_handlers = {}  # reset node handlers as they may change between contexts
+
     ############################################################################
     # UI Handling
     ############################################################################
@@ -895,19 +898,32 @@ class HoudiniEngine(sgtk.platform.Engine):
     def node_handler(self, node):
         """
         """
-        node_type = node.type().name()
-        if node_type not in self.__node_handlers:
+        node_type = node.type()
+        node_type_name = node_type.name()
+        node_category = node_type.category().name()
+        hook_instance = self.__node_handlers.get(node_category, {}).get(node_type_name, False)
+
+        if hook_instance is False:
+            if not self.__node_handlers.get(node_category):
+                self.__node_handlers[node_category] = {}
             node_handlers = self.get_setting("node_handlers")
-            tk_houdini = self.import_module("tk_houdini")
-            base_class = tk_houdini.base_hooks.NodeHandlerBase
+            hook_instance = None
             for handler in node_handlers:
-                if handler["node_type"] == node_type:
-                    self.__node_handlers[node_type] = self.create_hook_instance(
+                setup_hook = (
+                    handler["node_category"] == node_category
+                    and handler["node_type"] == node_type_name
+                )
+                if setup_hook:                
+                    tk_houdini = self.import_module("tk_houdini")
+                    base_class = tk_houdini.base_hooks.NodeHandlerBase
+                    hook_instance = self.create_hook_instance(
                         handler["hook"],
                         base_class=base_class,
                     )
                     break
-        return self.__node_handlers[node_type]
+            self.__node_handlers[node_category][node_type_name] = hook_instance
+                    
+        return hook_instance
 
     def remove_sgtk_parms(self, node):
         handler = self.node_handler(node)

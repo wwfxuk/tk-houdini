@@ -1,21 +1,12 @@
-def run_after_last_delete(node, node_type):
+def run_after_last_delete(node):
     try:
         import sgtk
     except ImportError:
         pass
     engine = sgtk.platform.current_engine()
-    node_handlers = engine.get_setting("node_handlers")
-    tk_houdini = engine.import_module("tk_houdini")
-    base_class = tk_houdini.base_hooks.NodeHandlerBase
-    for handler in node_handlers:
-        if handler["node_type"] == node_type:
-            engine.execute_hook_expression(
-                handler["hook"],
-                "after_last_delete",
-                base_class=base_class,
-                node=node
-            )
-            break
+    handler = engine.node_handler(node)
+    if handler:
+        handler.after_last_delete(node=node)
 
 
-run_after_last_delete(kwargs["node"], kwargs["type"].name())
+run_after_last_delete(kwargs["node"])

@@ -14,7 +14,11 @@ class AlembicNodeHandler(HookBaseClass):
 
     SGTK_ABC_INDENTIFIER = "sgtk_abc_identifier"
 
-    def _add_identifier_parm_template(self, node, templates):
+    def _create_sgtk_parms(self, node):
+        templates = super(AlembicNodeHandler, self)._create_sgtk_parms(node)
+
+        templates[-1].setJoinWithNext(True)
+
         choices = self.get_work_template(node).keys["identifier"].labelled_choices
         sgtk_abc_identifier = hou.MenuParmTemplate(
             self.SGTK_ABC_INDENTIFIER,
@@ -33,6 +37,8 @@ class AlembicNodeHandler(HookBaseClass):
 
         sgtk_single_frame = self._build_single_file_parm(True)
         templates.append(sgtk_single_frame)
+
+        return templates
 
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
         main_folder = parameter_group.get("folder0")

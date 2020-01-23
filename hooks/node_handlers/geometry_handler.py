@@ -14,7 +14,11 @@ class GeometryNodeHandler(HookBaseClass):
 
     SGTK_CACHE_EXTENSION = "sgtk_cache_extension"
 
-    def _add_identifier_parm_template(self, node, templates):
+    def _create_sgtk_parms(self, node):
+        templates = super(GeometryNodeHandler, self)._create_sgtk_parms(node)
+
+        templates[-1].setJoinWithNext(True)
+
         sgtk_single_frame = self._build_single_file_parm(False)
         sgtk_single_frame.setJoinWithNext(True)
         templates.append(sgtk_single_frame)
@@ -33,6 +37,8 @@ class GeometryNodeHandler(HookBaseClass):
             '{ use_sgtk != 1 }'
         )
         templates.append(sgtk_cache_ext)
+    
+        return templates
 
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
         index = parameter_group.index_of_template(self.OUTPUT_PARM)

@@ -231,7 +231,7 @@ class IfdNodeHandler(HookBaseClass):
             self.VM_CRYPTOLAYERSIDECAR_TMPL.format(index)
         )
         try:
-            self.validate_parm(parm)
+            self._validate_parm(parm)
         except Exception:
             vm_cryptolayername.set("")
             vm_cryptolayeroutput.set(self.AOV_ERROR)
@@ -336,11 +336,11 @@ class IfdNodeHandler(HookBaseClass):
             self.SGTK_CRYPTOLAYERNAME_TMPL
         )
 
-    def populate_sgtk_parms(self, node, use_next_version=True):
+    def restore_sgtk_parms(self, node, use_next_version=True):
         vm_dcmfilename = node.parm(self.VM_DCMFILENAME)
         dcm_file_path = vm_dcmfilename.evalAsString()
 
-        if not super(IfdNodeHandler, self).populate_sgtk_parms(node, use_next_version):
+        if not super(IfdNodeHandler, self).restore_sgtk_parms(node, use_next_version):
             return False
         
         dcm_template = self._get_template(self.DCM_WORK_TEMPLATE)

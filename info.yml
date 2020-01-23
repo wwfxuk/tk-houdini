@@ -93,10 +93,11 @@ configuration:
             type: dict 
             items:
                 node_type: { type: str }
+                node_category: { type: str }
                 hook: { type: hook }
                 work_template: 
                     type: template
-                    fields: context, [name], [version], *   
+                    fields: context, [name], [version], *
                 publish_template:
                     type: template
                     fields: context, [name], [version], *
