@@ -77,18 +77,14 @@ class NodeHandlerBase(HookBaseClass):
         node.setParmTemplateGroup(parameter_group.build())
         return True
 
-    def _populate_from_file_path(self, node, file_path, use_next_version):
-        raise NotImplementedError("'_populate_from_file_path' needs to be implemented")
+    def _restore_sgtk_parms(self, node):
+        raise NotImplementedError("'_restore_sgtk_parms' needs to be implemented")
 
-    def restore_sgtk_parms(self, node, use_next_version=True):
+    def restore_sgtk_parms(self, node):
         use_sgtk = node.parm(self.USE_SGTK)
         if use_sgtk:
-            return False
-        output_parm = node.parm(self.OUTPUT_PARM)
-        original_file_path = output_parm.evalAsString()
-        self.add_sgtk_parms(node)
-        self._populate_from_file_path(node, original_file_path, use_next_version)
-        return True
+            return
+        self._restore_sgtk_parms(node)
 
     #############################################################################################
     # houdini callback overrides
@@ -129,7 +125,7 @@ class NodeHandlerBase(HookBaseClass):
         utils = tk_houdini.utils
         return utils.wrap_node_parameter_group(node)
 
-    def _setup_parms(self, node):
+    def _set_up_parms(self, node):
         pass
 
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
@@ -206,7 +202,7 @@ class NodeHandlerBase(HookBaseClass):
         return sgtk_folder
 
     def _set_up_node(self, node, parameter_group):
-        self._setup_parms(node)
+        self._set_up_parms(node)
         sgtk_folder = self._create_sgtk_folder(node)
         self._customise_parameter_group(node, parameter_group, sgtk_folder)
         node.setParmTemplateGroup(parameter_group.build())
@@ -229,6 +225,8 @@ class NodeHandlerBase(HookBaseClass):
         use_sgtk = node.parm(self.USE_SGTK)
         value = use_sgtk.eval()
         self._enable_sgtk(node, value)
+        if value:
+            self.refresh_file_path(kwargs)
 
     def _get_all_versions(self, node):
         sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)

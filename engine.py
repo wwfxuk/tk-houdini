@@ -931,3 +931,11 @@ class HoudiniEngine(sgtk.platform.Engine):
 
     def remove_all_sgtk_parms(self):
         pass
+
+    def restore_sgtk_parms(self, node):
+        handler = self.node_handler(node)
+        handler.restore_sgtk_parms(node)
+
+    def restore_all_sgtk_parms(self):
+        pass
+

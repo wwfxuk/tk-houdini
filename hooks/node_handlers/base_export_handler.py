@@ -75,7 +75,7 @@ class ExportNodeHandler(HookBaseClass):
         self._add_optional_key_parms(node, parameter_group)
         super(ExportNodeHandler, self)._set_up_node(node, parameter_group)
 
-    def _setup_parms(self, node):
+    def _set_up_parms(self, node):
         output_parm = node.parm(self.OUTPUT_PARM)
         output_parm.set(self.DEFAULT_ERROR_STRING)
         output_parm.lock(True)
@@ -212,6 +212,12 @@ class ExportNodeHandler(HookBaseClass):
         for key_name in self.get_optional_keys(template):
             parm = node.parm(self.OPTIONAL_KEY_PARM_TMPL.format(key_name))
             parm.set(bool(fields.get(key_name)))
+
+    def _update_all_versions(self, node, all_versions):
+        if all_versions != self._get_all_versions(node):
+            all_versions_str = ",".join(map(str, all_versions))
+            sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
+            sgtk_all_versions.set(all_versions_str)
             
     def _refresh_file_path(self, node, update_version=True):
         output_parm = node.parm(self.OUTPUT_PARM)
@@ -225,10 +231,7 @@ class ExportNodeHandler(HookBaseClass):
         
         all_versions = self._resolve_all_versions_from_fields(node, fields)
         sgtk_version = node.parm(self.SGTK_VERSION)
-        if all_versions != self._get_all_versions(node):
-            all_versions_str = ",".join(map(str, all_versions))
-            sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
-            sgtk_all_versions.set(all_versions_str)
+        self._update_all_versions(node, all_versions)
         
         if update_version:
             sgtk_version.set(len(all_versions))
@@ -292,12 +295,13 @@ class ExportNodeHandler(HookBaseClass):
         sgtk_variation.set(fields.get("variation", ""))
 
     def _set_version(self, node, current_version):
+        version_str = str(current_version)
         sgtk_version = node.parm(self.SGTK_VERSION)
         entries = sgtk_version.menuItems()
-        if current_version not in entries:
+        if version_str not in entries:
             index = len(entries)
         else:
-            index = entries.index(current_version)
+            index = entries.index(version_str)
         sgtk_version.set(index)
 
     def _get_skip_keys(self, node, template):
@@ -310,7 +314,7 @@ class ExportNodeHandler(HookBaseClass):
                 skip_keys.append(key_name)
         return skip_keys
 
-    def _populate_from_file_path(self, node, file_path, use_next_version):
+    def _populate_from_file_path(self, node, file_path):
         template = self._get_template_for_file_path(node, file_path)
         skip_keys = self._get_skip_keys(node, template)
         fields = template.validate_and_get_fields(file_path, skip_keys=skip_keys)
@@ -321,9 +325,16 @@ class ExportNodeHandler(HookBaseClass):
             output_parm = node.parm(self.OUTPUT_PARM)
             output_parm.set(file_path)
         else:
-            current_version = str(fields.get("version", self.NEXT_VERSION_STR))
+            fields["SEQ"] = "FORMAT: $F"
+            current_version = fields.get("version", self.NEXT_VERSION_STR)
+            all_versions = self._resolve_all_versions_from_fields(node, fields)
             self._populate_from_fields(node, fields)
-            self._refresh_file_path(node)
-            if not use_next_version:
-                self._set_version(node, current_version)
-                self._refresh_file_path(node, update_version=False)
+            self._update_all_versions(node, all_versions)
+            self._set_version(node, current_version)
+            self._refresh_file_path(node, update_version=False)
+
+    def _restore_sgtk_parms(self, node):
+        output_parm = node.parm(self.OUTPUT_PARM)
+        original_file_path = output_parm.evalAsString()
+        self.add_sgtk_parms(node)
+        self._populate_from_file_path(node, original_file_path)

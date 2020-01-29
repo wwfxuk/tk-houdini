@@ -99,8 +99,8 @@ class BaseRenderNodeHandler(HookBaseClass):
         if pass_name:
             fields["identifier"] = pass_name
 
-    def _setup_parms(self, node):
-        super(BaseRenderNodeHandler, self)._setup_parms(node)
+    def _set_up_parms(self, node):
+        super(BaseRenderNodeHandler, self)._set_up_parms(node)
         self._lock_parms(node, True)
 
     def _enable_sgtk(self, node, sgtk_enabled):

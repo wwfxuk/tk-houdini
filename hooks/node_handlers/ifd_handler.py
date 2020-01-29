@@ -336,12 +336,11 @@ class IfdNodeHandler(HookBaseClass):
             self.SGTK_CRYPTOLAYERNAME_TMPL
         )
 
-    def restore_sgtk_parms(self, node, use_next_version=True):
+    def _restore_sgtk_parms(self, node):
         vm_dcmfilename = node.parm(self.VM_DCMFILENAME)
         dcm_file_path = vm_dcmfilename.evalAsString()
 
-        if not super(IfdNodeHandler, self).restore_sgtk_parms(node, use_next_version):
-            return False
+        super(IfdNodeHandler, self)._restore_sgtk_parms(node)
         
         dcm_template = self._get_template(self.DCM_WORK_TEMPLATE)
         dcm_fields = dcm_template.get_fields(dcm_file_path)
@@ -352,4 +351,3 @@ class IfdNodeHandler(HookBaseClass):
             index = entries.index(ext)
             sgtk_deep_extension.set(index)
         
-        return True
