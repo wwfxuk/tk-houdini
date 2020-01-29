@@ -12,6 +12,7 @@
 A Houdini engine for Tank.
 """
 
+import itertools
 import os
 import sys
 import ctypes
@@ -924,18 +925,42 @@ class HoudiniEngine(sgtk.platform.Engine):
             self.__node_handlers[node_category][node_type_name] = hook_instance
                     
         return hook_instance
+    
+    def _all_sgtk_nodes(self):
+        node_type_categories = hou.nodeTypeCategories()
+        node_handler_settings = self.get_setting("node_handlers")
+
+        def key_func(item):
+            return item["node_category"]
+
+        grouped = itertools.groupby(
+            sorted(node_handler_settings, key=key_func),
+            key=key_func
+        )
+
+        for category_name, node_handlers in grouped:
+            category = node_type_categories[category_name]
+            for node_handler in node_handlers:
+                node_type_name = node_handler["node_type"]
+                node_type = hou.nodeType(category, node_type_name)
+                for node in node_type.instances():
+                    parm = node.parm("sgtk_identifier")
+                    if parm:
+                        yield node
 
     def remove_sgtk_parms(self, node):
         handler = self.node_handler(node)
         handler.remove_sgtk_parms(node)
 
     def remove_all_sgtk_parms(self):
-        pass
+        for node in self._all_sgtk_nodes():
+            self.remove_sgtk_parms(node)
 
     def restore_sgtk_parms(self, node):
         handler = self.node_handler(node)
         handler.restore_sgtk_parms(node)
 
     def restore_all_sgtk_parms(self):
-        pass
+        for node in self._all_sgtk_nodes():
+            self.restore_sgtk_parms(node)
 

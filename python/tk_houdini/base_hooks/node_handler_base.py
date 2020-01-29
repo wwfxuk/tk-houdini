@@ -18,6 +18,7 @@ class NodeHandlerBase(HookBaseClass):
     SGTK_RESOLVED_VERSION = "sgtk_resolved_version"
     SGTK_FOLDER = "sgtk_folder"
     USE_SGTK = "use_sgtk"
+    SGTK_IDENTIFIER = "sgtk_identifier"
 
     def __new__(cls, *args, **kwargs):
         if cls.NODE_TYPE:
@@ -81,8 +82,9 @@ class NodeHandlerBase(HookBaseClass):
         raise NotImplementedError("'_restore_sgtk_parms' needs to be implemented")
 
     def restore_sgtk_parms(self, node):
+        sgtk_identifier = node.parm(self.SGTK_IDENTIFIER)
         use_sgtk = node.parm(self.USE_SGTK)
-        if use_sgtk:
+        if use_sgtk or not sgtk_identifier:
             return
         self._restore_sgtk_parms(node)
 
@@ -201,9 +203,19 @@ class NodeHandlerBase(HookBaseClass):
         )
         return sgtk_folder
 
-    def _set_up_node(self, node, parameter_group):
+    def _set_up_node(self, node, parameter_group, hou=None):
+        if not hou:
+            import hou
         self._set_up_parms(node)
         sgtk_folder = self._create_sgtk_folder(node)
+        if not self.SGTK_IDENTIFIER in parameter_group:
+            sgtk_identifier = hou.ToggleParmTemplate(
+                self.SGTK_IDENTIFIER,
+                "SGTK",
+                default_value=True,
+                is_hidden=True
+            )
+            parameter_group.append_template(sgtk_identifier)
         self._customise_parameter_group(node, parameter_group, sgtk_folder)
         node.setParmTemplateGroup(parameter_group.build())
 

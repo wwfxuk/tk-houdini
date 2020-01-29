@@ -73,7 +73,7 @@ class ExportNodeHandler(HookBaseClass):
 
     def _set_up_node(self, node, parameter_group):
         self._add_optional_key_parms(node, parameter_group)
-        super(ExportNodeHandler, self)._set_up_node(node, parameter_group)
+        super(ExportNodeHandler, self)._set_up_node(node, parameter_group, hou=hou)
 
     def _set_up_parms(self, node):
         output_parm = node.parm(self.OUTPUT_PARM)

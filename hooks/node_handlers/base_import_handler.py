@@ -21,6 +21,7 @@ class ImportNodeHandler(HookBaseClass):
     SGTK_ID = "sgtk_id"
     SGTK_BROWSE = "sgtk_browse"
     SGTK_PUBLISH_DATA = "sgtk_publish_data"
+    SGTK_LAST_USED = "sgtk_last_used"
 
     VALID_FILE_TYPES = "valid_file_types"
 
@@ -51,7 +52,15 @@ class ImportNodeHandler(HookBaseClass):
                 is_hidden=True
             )
             parameter_group.append_template(sgtk_publish_data)
-        super(ImportNodeHandler, self)._set_up_node(node, parameter_group)
+        if not self.SGTK_LAST_USED in parameter_group:
+            sgtk_last_used = hou.ToggleParmTemplate(
+                self.SGTK_LAST_USED,
+                "shotgun last used",
+                default_value=True,
+                is_hidden=True
+            )
+            parameter_group.append_template(sgtk_last_used)
+        super(ImportNodeHandler, self)._set_up_node(node, parameter_group, hou=hou)
 
     def _create_sgtk_parms(self, node):
         templates = super(ImportNodeHandler, self)._create_sgtk_parms(node, hou=hou)
@@ -95,6 +104,14 @@ class ImportNodeHandler(HookBaseClass):
     def _enable_sgtk(self, node, sgtk_enabled):
         output_parm = node.parm(self.INPUT_PARM)
         output_parm.lock(sgtk_enabled)
+
+    def enable_sgtk(self, kwargs):
+        super(ImportNodeHandler, self).enable_sgtk(kwargs)
+        node = kwargs["node"]
+        use_sgtk = node.parm(self.USE_SGTK)
+        value = use_sgtk.eval()
+        sgtk_last_used = node.parm(self.SGTK_LAST_USED)
+        sgtk_last_used.set(value)
 
     def _resolve_version(self, all_versions_and_statuses, current):
         self.parent.log_debug("ALL VERSIONS: {!r}".format(all_versions_and_statuses))
@@ -319,6 +336,9 @@ class ImportNodeHandler(HookBaseClass):
         parameter_group.pop_template(index)
 
     def _restore_sgtk_parms(self, node):
+        input_parm = node.parm(self.INPUT_PARM)
+        original_file_path = input_parm.evalAsString()
+
         publish_data = self._retrieve_publish_data(node)
         self.add_sgtk_parms(node)
         all_versions_and_statuses = self._resolve_all_versions_and_statuses_from_publish_data(
@@ -327,4 +347,10 @@ class ImportNodeHandler(HookBaseClass):
         sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
         sgtk_all_versions.set(json.dumps(all_versions_and_statuses))
         self.populate_node_from_publish_data(node, publish_data, publish_data["version_policy"])
-        
+
+        sgtk_last_used = node.parm(self.SGTK_LAST_USED)
+        if not sgtk_last_used.eval():
+            use_sgtk = node.parm(self.USE_SGTK)
+            use_sgtk.set(False)
+            self._enable_sgtk(node, False)
+            input_parm.set(original_file_path)
