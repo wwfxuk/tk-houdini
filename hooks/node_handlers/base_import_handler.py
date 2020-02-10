@@ -180,8 +180,7 @@ class ImportNodeHandler(HookBaseClass):
         publish_data_str = sgtk_publish_data.evalAsString()
         if not publish_data_str:
             return
-        self.parent.log_debug("{!r}\n\t{}".format(publish_data_str, type(publish_data_str).__name__))
-        publish_data = json.loads(publish_data_str)
+        publish_data = json.loads(publish_data_str.encode("string_escape"))
         
         self._refresh_file_path_from_publish_data(node, publish_data)
 
@@ -244,7 +243,6 @@ class ImportNodeHandler(HookBaseClass):
                     "status": result["sg_status_list"]
                 }
             )
-        self.parent.log_debug("{!r}\n\t{}".format(versions_and_statuses, type(versions_and_statuses).__name__))
         return versions_and_statuses
 
     def _update_publish_data_parm(self, node, publish_data, version_policy):
@@ -315,7 +313,7 @@ class ImportNodeHandler(HookBaseClass):
         sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
         default = "[]" if self.ACCEPTS_MULTI_SELECTION else "{}"
         publish_data_str = sgtk_publish_data.evalAsString() or default
-        publish_data = json.loads(publish_data_str)
+        publish_data = json.loads(publish_data_str.encode("string_escape"))
         self.parent.log_debug("PUBLISH_DATA: {}".format(json.dumps(publish_data, indent=4)))
         return publish_data
 
