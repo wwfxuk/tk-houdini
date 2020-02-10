@@ -180,6 +180,7 @@ class ImportNodeHandler(HookBaseClass):
         publish_data_str = sgtk_publish_data.evalAsString()
         if not publish_data_str:
             return
+        self.parent.log_debug("{!r}\n\t{}".format(publish_data_str, type(publish_data_str).__name__)
         publish_data = json.loads(publish_data_str)
         
         self._refresh_file_path_from_publish_data(node, publish_data)
@@ -243,7 +244,7 @@ class ImportNodeHandler(HookBaseClass):
                     "status": result["sg_status_list"]
                 }
             )
-
+        self.parent.log_debug("{!r}\n\t{}".format(versions_and_statuses, type(versions_and_statuses).__name__)
         return versions_and_statuses
 
     def _update_publish_data_parm(self, node, publish_data, version_policy):
