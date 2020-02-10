@@ -1,3 +1,4 @@
+import copy
 from functools import partial
 import glob
 import itertools
@@ -128,7 +129,16 @@ class ExportNodeHandler(HookBaseClass):
     # UI Callbacks
     #############################################################################################
 
-    def _resolve_all_versions_from_fields(self, node, fields):
+    def _get_sequence_glob_path(self, path, template, fields):
+        glob_path = path
+        frame_key = template.keys.get("SEQ")
+        if frame_key:
+            frame_format_string = frame_key._extract_format_string(fields["SEQ"])
+            frame_spec = frame_key._resolve_frame_spec(frame_format_string, frame_key.format_spec)
+            glob_path = re.sub(re.escape(frame_spec), r"*", glob_path)
+        return glob_path
+
+    def _resolve_all_versions_from_fields(self, node, fields, template):
         versions = set()
         if fields:
             if "version" not in fields:
@@ -139,11 +149,10 @@ class ExportNodeHandler(HookBaseClass):
             def repl_version(match):
                 return "{}*{}".format(match.group(1), match.group(3))
 
-            work_template = self.get_work_template(node)
-            path = work_template.apply_fields(fields)
+            path = template.apply_fields(fields)
             glob_path = path
 
-            version_key = work_template.keys.get("version")
+            version_key = template.keys.get("version")
             if version_key:
                 format_spec = version_key.format_spec or ""
                 match = version_key._FORMAT_SPEC_RE.match(format_spec)
@@ -158,16 +167,12 @@ class ExportNodeHandler(HookBaseClass):
                 regex = r"([/_\.][vV])({})([/_\.])".format(padded_version_regex)
                 glob_path = re.sub(regex, repl_version, glob_path)
             
-            frame_key = work_template.keys.get("SEQ")
-            if frame_key:
-                frame_format_string = frame_key._extract_format_string(fields["SEQ"])
-                frame_spec = frame_key._resolve_frame_spec(frame_format_string, frame_key.format_spec)
-                glob_path = re.sub(re.escape(frame_spec), r"*", glob_path)
+            glob_path = self._get_sequence_glob_path(glob_path, template, fields)
 
             version_paths = glob.iglob(glob_path)
             for key, paths in itertools.groupby(version_paths, key=os.path.dirname):
                 version_path = paths.next()
-                fields = work_template.get_fields(version_path)
+                fields = template.get_fields(version_path)
                 versions.add(int(fields["version"]))
             versions = list(versions)
             versions.sort()
@@ -213,10 +218,10 @@ class ExportNodeHandler(HookBaseClass):
             parm = node.parm(self.OPTIONAL_KEY_PARM_TMPL.format(key_name))
             parm.set(bool(fields.get(key_name)))
 
-    def _update_all_versions(self, node, all_versions):
-        if all_versions != self._get_all_versions(node):
+    def _update_all_versions(self, node, all_versions, parm_name):
+        if all_versions != self._get_all_versions(node, parm_name):
             all_versions_str = ",".join(map(str, all_versions))
-            sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
+            sgtk_all_versions = node.parm(parm_name)
             sgtk_all_versions.set(all_versions_str)
             
     def _refresh_file_path(self, node, update_version=True):
@@ -229,9 +234,9 @@ class ExportNodeHandler(HookBaseClass):
         self._update_template_fields(node, fields)
         self._update_optional_keys(node, template, fields)
         
-        all_versions = self._resolve_all_versions_from_fields(node, fields)
+        all_versions = self._resolve_all_versions_from_fields(node, fields, template)
         sgtk_version = node.parm(self.SGTK_VERSION)
-        self._update_all_versions(node, all_versions)
+        self._update_all_versions(node, all_versions, self.SGTK_ALL_VERSIONS)
         
         if update_version:
             sgtk_version.set(len(all_versions))
@@ -327,14 +332,86 @@ class ExportNodeHandler(HookBaseClass):
         else:
             fields["SEQ"] = "FORMAT: $F"
             current_version = fields.get("version", self.NEXT_VERSION_STR)
-            all_versions = self._resolve_all_versions_from_fields(node, fields)
+            all_versions = self._resolve_all_versions_from_fields(node, fields, template)
             self._populate_from_fields(node, fields)
-            self._update_all_versions(node, all_versions)
+            self._update_all_versions(node, all_versions, self.SGTK_ALL_VERSIONS)
             self._set_version(node, current_version)
             self._refresh_file_path(node, update_version=False)
 
     def _restore_sgtk_parms(self, node):
         output_parm = node.parm(self.OUTPUT_PARM)
-        original_file_path = output_parm.evalAsString()
+        original_file_path = output_parm.unexpandedString()
         self.add_sgtk_parms(node)
         self._populate_from_file_path(node, original_file_path)
+
+    def _get_sequence_paths(self, path, work_template, fields):
+        fields = copy.deepcopy(fields)
+        if "SEQ" in fields:
+            fields["SEQ"] = "FORMAT: $F"
+            glob_path = self._get_sequence_glob_path(path, work_template, fields)
+            sequence_paths = glob.glob(glob_path)
+            return sequence_paths
+    
+    def _get_output_path_and_templates_for_parm(
+            self,
+            node,
+            parm_name,
+            all_versions_parm,
+            work_template,
+            publish_template,
+            paths_and_templates,
+            is_deep=False
+        ):
+        parm = node.parm(parm_name)
+        path = parm.evalAsString()
+        
+        item = {
+            "work_template": work_template,
+            "publish_template": publish_template
+        }
+        fields = work_template.get_fields(path)
+        
+        sequence_paths = self._get_sequence_paths(path, work_template, fields)
+        if sequence_paths:
+            item["sequence_paths"] = sequence_paths
+        elif not os.path.exists(path):
+            # if nothing exists on disk
+            # lets get the last rendered one because it might be "<Next>"
+            # and it's evaluated to the next available version
+            all_versions = self._get_all_versions(node, all_versions_parm)
+            if not all_versions:
+                # no versions so nothing's been rendered
+                return
+            fields["version"] = max(all_versions)
+            path = work_template.apply_fields(fields)
+            sequence_paths = self._get_sequence_paths(path, work_template, fields)
+            if sequence_paths:
+                item["sequence_paths"] = sequence_paths
+
+        item["path"] = path
+
+        if is_deep:
+            item["is_deep"] = True
+        paths_and_templates.append(item)
+
+    def _get_output_paths_and_templates(self, node):
+        paths_and_templates = []
+
+        work_template = self.get_work_template(node)
+        publish_template = self.get_publish_template(node)
+        self._get_output_path_and_templates_for_parm(
+            node,
+            self.OUTPUT_PARM,
+            self.SGTK_ALL_VERSIONS,
+            work_template,
+            publish_template,
+            paths_and_templates
+        )
+        
+        return paths_and_templates
+
+    def get_output_paths_and_templates(self, node):
+        if not node.parm(self.USE_SGTK).eval():
+            return []
+        
+        return self._get_output_paths_and_templates(node)

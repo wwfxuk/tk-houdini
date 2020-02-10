@@ -926,7 +926,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                     
         return hook_instance
     
-    def _all_sgtk_nodes(self):
+    def all_sgtk_nodes(self):
         node_type_categories = hou.nodeTypeCategories()
         node_handler_settings = self.get_setting("node_handlers")
 
@@ -953,7 +953,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         handler.remove_sgtk_parms(node)
 
     def remove_all_sgtk_parms(self):
-        for node in self._all_sgtk_nodes():
+        for node in self.all_sgtk_nodes():
             self.remove_sgtk_parms(node)
 
     def restore_sgtk_parms(self, node):
@@ -961,6 +961,6 @@ class HoudiniEngine(sgtk.platform.Engine):
         handler.restore_sgtk_parms(node)
 
     def restore_all_sgtk_parms(self):
-        for node in self._all_sgtk_nodes():
+        for node in self.all_sgtk_nodes():
             self.restore_sgtk_parms(node)
 

@@ -17,6 +17,7 @@ class IfdNodeHandler(HookBaseClass):
     AOV_COUNT = "vm_numaux"
     AOV_NAME_TMPL = "vm_channel_plane{}"
     AOV_FILE_TMPL = "vm_filename_plane{}"
+    AOV_USE_FILE_TMPL = "vm_usefile_plane{}"
 
     # deep output
     VM_DCMFILENAME = "vm_dcmfilename"
@@ -26,10 +27,12 @@ class IfdNodeHandler(HookBaseClass):
     VM_CRYPTOLAYERS = "vm_cryptolayers"
     VM_CRYPTOLAYERNAME_TMPL = "vm_cryptolayername{}"
     VM_CRYPTOLAYEROUTPUT_TMPL = "vm_cryptolayeroutput{}"
+    VM_CRYPTOLAYEROUTPUTENABLE_TMPL = "vm_cryptolayeroutputenable{}"
     VM_CRYPTOLAYERSIDECAR_TMPL = "vm_cryptolayersidecar{}"
 
-    # ifs
-    SOHO_DISKFILE = "soho_diskfile"
+    # ifd
+    ARCHIVE_ENABLED = "soho_outputmode"
+    ARCHIVE_OUTPUT = "soho_diskfile"
 
     # shotgun
     SGTK_AOV_NAME_TMPL = "sgtk_channel_plane{}"
@@ -38,8 +41,11 @@ class IfdNodeHandler(HookBaseClass):
 
     # templates
     DCM_WORK_TEMPLATE = "dcm_work_template"
+    DCM_PUBLISH_TEMPLATE = "dcm_publish_template"
     DSM_WORK_TEMPLATE = "dsm_work_template"
-    IFD_WORK_TEMPLATE = "ifd_work_template"
+    DSM_PUBLISH_TEMPLATE = "dsm_publish_template"
+    ARCHIVE_WORK_TEMPLATE = "ifd_work_template"
+    ARCHIVE_PUBLISH_TEMPLATE = "ifd_publish_template"
     MANIFEST_NAME_TEMPLATE = "manifest_name_template"
 
     #strings
@@ -61,7 +67,7 @@ class IfdNodeHandler(HookBaseClass):
 
     def _lock_parms(self, node, lock):
         super(IfdNodeHandler, self)._lock_parms(node, lock)
-        parm_names = (self.VM_DCMFILENAME, self.VM_DSMFILENAME, self.SOHO_DISKFILE)
+        parm_names = (self.VM_DCMFILENAME, self.VM_DSMFILENAME)
         for parm_name in parm_names:
             parm = node.parm(parm_name)
             parm.lock(lock)
@@ -180,6 +186,12 @@ class IfdNodeHandler(HookBaseClass):
         )
         vm_cryptolayers.insert_template(index, sgtk_cryptolayername)
 
+        # ifd
+        archive_folder = parameter_group.get("images6_4")
+        index = archive_folder.index_of_template(self.ARCHIVE_OUTPUT)
+        archive_version_folder = self._create_archive_versions_folder(node)
+        archive_folder.insert_template(index + 1, archive_version_folder)
+
     def _refresh_file_path(self, node, update_version=True):
         super(IfdNodeHandler, self)._refresh_file_path(
             node,
@@ -191,7 +203,6 @@ class IfdNodeHandler(HookBaseClass):
             self._update_crypto_layer_path(node, index)
         
         self._update_deep_paths(node)
-        self.update_file_path(node, self.SOHO_DISKFILE, self.IFD_WORK_TEMPLATE)
 
     #############################################################################################
     # Deep Output
@@ -327,6 +338,10 @@ class IfdNodeHandler(HookBaseClass):
         vm_cryptolayersidecar_template = vm_cryptolayersidecar.template
         vm_cryptolayersidecar_template.setDefaultValue(("CryptoMaterial.json",))
 
+        archive_folder = parameter_group.get("images6_4")
+        index = archive_folder.get(self.ARCHIVE_FOLDER)
+        archive_folder.pop_template(index)
+
     def _populate_from_fields(self, node, fields):
         super(IfdNodeHandler, self)._populate_from_fields(node, fields)
         self._populate_aov_names(
@@ -350,4 +365,54 @@ class IfdNodeHandler(HookBaseClass):
             ext = dcm_fields.get("extension", "rat")
             index = entries.index(ext)
             sgtk_deep_extension.set(index)
-        
+
+    def _get_output_paths_and_templates(self, node):
+        paths_and_templates = super(IfdNodeHandler, self)._get_output_paths_and_templates(node)
+
+        # get cryptomatte
+        self._get_multi_parm_output_paths_and_templates(
+            node,
+            self.VM_CRYPTOLAYERS,
+            self.VM_CRYPTOLAYEROUTPUTENABLE_TMPL,
+            self.VM_CRYPTOLAYEROUTPUT_TMPL,
+            self.AOV_WORK_TEMPLATE,
+            self.AOV_PUBLISH_TEMPLATE,
+            paths_and_templates
+        )
+
+        # get deep outputs
+        deep_resolver = node.parm("vm_deepresolver")
+        result = deep_resolver.evalAsString()
+        if result != "null":
+            func_parms = {
+                "camera": (
+                    node,
+                    self.VM_DCMFILENAME,
+                    self._get_template(self.DCM_WORK_TEMPLATE),
+                    self._get_template(self.DCM_PUBLISH_TEMPLATE),
+                    paths_and_templates,
+                    True
+                ),
+                "shadow": (
+                    node,
+                    self.VM_DSMFILENAME,
+                    self._get_template(self.DSM_WORK_TEMPLATE),
+                    self._get_template(self.DSM_PUBLISH_TEMPLATE),
+                    paths_and_templates,
+                    True
+                )
+            }
+            self._get_output_path_and_templates_for_parm(*func_parms[result])
+
+        # get ifd
+        if node.parm(self.ARCHIVE_ENABLED).eval():
+            paths_and_templates = []  # reset as enabling this won't do any of the renders
+            self._get_output_path_and_templates_for_parm(
+                node,
+                self.ARCHIVE_OUTPUT,
+                self._get_template(self.ARCHIVE_WORK_TEMPLATE),
+                self._get_template(self.ARCHIVE_PUBLISH_TEMPLATE),
+                paths_and_templates
+            )
+
+        return paths_and_templates
