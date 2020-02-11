@@ -191,8 +191,12 @@ class ArnoldNodeHandler(HookBaseClass):
         ar_aovs.pop_template(index)
 
         archive_folder = parameter_group.get("main6_2")
-        index = archive_folder.get(self.ARCHIVE_FOLDER)
+        index = archive_folder.index_of_template(self.ARCHIVE_FOLDER)
         archive_folder.pop_template(index)
+
+        mtlx_folder = properties_folder.get("folder0_7")
+        index = mtlx_folder.index_of_template(self.MTLX_FOLDER)
+        mtlx_folder.pop_template(index)
     
     def _get_output_paths_and_templates(self, node):
         paths_and_templates = super(ArnoldNodeHandler, self)._get_output_paths_and_templates(node)

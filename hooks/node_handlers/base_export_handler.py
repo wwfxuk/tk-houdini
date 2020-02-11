@@ -1,6 +1,7 @@
 import copy
 from functools import partial
 import glob
+import json
 import itertools
 import os
 import re
@@ -50,27 +51,15 @@ class ExportNodeHandler(HookBaseClass):
     def _add_optional_key_parms(self, node, parameter_group):
         if self.PRESENT_OPTIONAL_KEYS in parameter_group:
             return
-        template = self.get_work_template(node)
 
-        templates = []
-        for key_name in self.get_optional_keys(template):
-            parm_name = self.OPTIONAL_KEY_PARM_TMPL.format(key_name)
-            parm_template = hou.ToggleParmTemplate(
-                parm_name,
-                key_name,
-                default_value=True,
-                is_hidden=True
-            )
-            templates.append(parm_template)
-
-        folder = hou.FolderParmTemplate(
+        present_optional_keys = hou.StringParmTemplate(
             self.PRESENT_OPTIONAL_KEYS,
             "present optional keys",
-            parm_templates=templates,
-            folder_type=hou.folderType.Simple,
+            1,
+            default_value=("{}",),
             is_hidden=True
         )
-        parameter_group.append_template(folder)
+        parameter_group.append_template(present_optional_keys)
 
     def _set_up_node(self, node, parameter_group):
         self._add_optional_key_parms(node, parameter_group)
@@ -214,9 +203,13 @@ class ExportNodeHandler(HookBaseClass):
         fields["variation"] = variation
 
     def _update_optional_keys(self, node, template, fields):
+        optional_fields = {}
         for key_name in self.get_optional_keys(template):
-            parm = node.parm(self.OPTIONAL_KEY_PARM_TMPL.format(key_name))
-            parm.set(bool(fields.get(key_name)))
+            field = fields.get(key_name)
+            if field:
+                optional_fields[key_name] = field
+        parm = node.parm(self.PRESENT_OPTIONAL_KEYS)
+        parm.set(json.dumps(optional_fields))
 
     def _update_all_versions(self, node, all_versions, parm_name):
         if all_versions != self._get_all_versions(node, parm_name):
@@ -309,19 +302,15 @@ class ExportNodeHandler(HookBaseClass):
             index = entries.index(version_str)
         sgtk_version.set(index)
 
-    def _get_skip_keys(self, node, template):
-        skip_keys = []
-        for key_name in self.get_optional_keys(template):
-            parm = node.parm(self.OPTIONAL_KEY_PARM_TMPL.format(key_name))
-            if not parm:
-                continue
-            if not parm.eval():
-                skip_keys.append(key_name)
-        return skip_keys
+    def _get_optional_fields(self, node, template):
+        parm = node.parm(self.PRESENT_OPTIONAL_KEYS)
+        if not parm:
+            return {}
+        return json.loads(parm.evalAsString())
 
     def _populate_from_file_path(self, node, file_path):
         template = self._get_template_for_file_path(node, file_path)
-        skip_keys = self._get_skip_keys(node, template)
+        skip_keys = self.get_optional_keys(template)
         fields = template.validate_and_get_fields(file_path, skip_keys=skip_keys)
         if not fields:
             use_sgtk = node.parm(self.USE_SGTK)
@@ -330,6 +319,7 @@ class ExportNodeHandler(HookBaseClass):
             output_parm = node.parm(self.OUTPUT_PARM)
             output_parm.set(file_path)
         else:
+            fields.update(self._get_optional_fields(node, template))
             fields["SEQ"] = "FORMAT: $F"
             current_version = fields.get("version", self.NEXT_VERSION_STR)
             all_versions = self._resolve_all_versions_from_fields(node, fields, template)

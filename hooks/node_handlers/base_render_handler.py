@@ -309,7 +309,7 @@ class BaseRenderNodeHandler(HookBaseClass):
     def _populate_from_fields(self, node, fields):
         super(BaseRenderNodeHandler, self)._populate_from_fields(node, fields)
         sgtk_pass_name = node.parm(self.SGTK_PASS_NAME)
-        sgtk_pass_name.set(fields.get("identifier", "beauty"))
+        sgtk_pass_name.set(fields.get("identifier", ""))
         self._populate_aov_names(
             node, 
             self.AOV_COUNT,
