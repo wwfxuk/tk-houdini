@@ -7,6 +7,7 @@ import os
 import re
 
 import sgtk
+from sgtk.platform.qt import QtGui
 
 import hou
 
@@ -208,7 +209,8 @@ class ExportNodeHandler(HookBaseClass):
             if field:
                 optional_fields[key_name] = field
         parm = node.parm(self.OPTIONAL_KEYS)
-        parm.set(json.dumps(optional_fields))
+        if parm:
+            parm.set(json.dumps(optional_fields))
 
     def _update_all_versions(self, node, all_versions):
         if all_versions != self._get_all_versions(node):
@@ -257,14 +259,18 @@ class ExportNodeHandler(HookBaseClass):
         value = parm.evalAsString().strip()
         try:
             self._validate_input(value)
-        except FieldInputError:
+            return True
+        except FieldInputError as error:
             parm.set("")
-            raise
+            QtGui.QMessageBox.warning(
+                self.parent._get_dialog_parent(),
+                "Input Error",
+                str(error)
+            )
+            return False
 
     def validate_parm_and_refresh_path(self, kwargs):
-        try:
-            self._validate_parm(kwargs["parm"])
-        finally:
+        if self._validate_parm(kwargs["parm"]):
             self._refresh_file_path(kwargs["node"])
 
     #############################################################################################
