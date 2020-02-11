@@ -78,10 +78,12 @@ class IfdNodeHandler(HookBaseClass):
     #############################################################################################
 
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
+
+        index = parameter_group.index_of_template("images6")
+        parameter_group.insert_template(index, sgtk_folder)
+
         # Insert sgtk folder before vm_picture
         images_folder = parameter_group.get("images6")
-        index = images_folder.index_of_template(self.OUTPUT_PARM)
-        images_folder.insert_template(index, sgtk_folder)
         
         # aovs
         image_planes_folder = images_folder.get("output6_1")
@@ -185,12 +187,6 @@ class IfdNodeHandler(HookBaseClass):
             hou.parmCondType.HideWhen, "{ use_sgtk != 1 }"
         )
         vm_cryptolayers.insert_template(index, sgtk_cryptolayername)
-
-        # ifd
-        archive_folder = parameter_group.get("images6_4")
-        index = archive_folder.index_of_template(self.ARCHIVE_OUTPUT)
-        archive_version_folder = self._create_archive_versions_folder(node)
-        archive_folder.insert_template(index + 1, archive_version_folder)
 
     def _refresh_file_path(self, node, update_version=True):
         super(IfdNodeHandler, self)._refresh_file_path(
@@ -338,10 +334,6 @@ class IfdNodeHandler(HookBaseClass):
         vm_cryptolayersidecar_template = vm_cryptolayersidecar.template
         vm_cryptolayersidecar_template.setDefaultValue(("CryptoMaterial.json",))
 
-        archive_folder = parameter_group.get("images6_4")
-        index = archive_folder.get(self.ARCHIVE_FOLDER)
-        archive_folder.pop_template(index)
-
     def _populate_from_fields(self, node, fields):
         super(IfdNodeHandler, self)._populate_from_fields(node, fields)
         self._populate_aov_names(
@@ -406,7 +398,6 @@ class IfdNodeHandler(HookBaseClass):
 
         # get ifd
         if node.parm(self.ARCHIVE_ENABLED).eval():
-            paths_and_templates = []  # reset as enabling this won't do any of the renders
             self._get_output_path_and_templates_for_parm(
                 node,
                 self.ARCHIVE_OUTPUT,

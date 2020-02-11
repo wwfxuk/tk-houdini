@@ -296,8 +296,8 @@ class ImportNodeHandler(HookBaseClass):
         node = kwargs["node"]
         self._load_from_shotgun(node)
 
-    def _get_all_versions_and_statuses(self, node, parm_name):
-        sgtk_all_versions = node.parm(parm_name)
+    def _get_all_versions_and_statuses(self, node):
+        sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
         all_versions_json = sgtk_all_versions.evalAsString() or "[]"
         all_versions_and_statuses = json.loads(all_versions_json)
         return all_versions_and_statuses
@@ -306,8 +306,8 @@ class ImportNodeHandler(HookBaseClass):
     def _extract_versions(versions_and_statuses):
         return [x["version"] for x in versions_and_statuses]
 
-    def _get_all_versions(self, node, parm_name):
-        return self._extract_versions(self._get_all_versions_and_statuses(node, parm_name))
+    def _get_all_versions(self, node):
+        return self._extract_versions(self._get_all_versions_and_statuses(node))
 
     def _retrieve_publish_data(self, node):
         sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)

@@ -240,22 +240,22 @@ class NodeHandlerBase(HookBaseClass):
         if value:
             self.refresh_file_path(kwargs)
 
-    def _get_all_versions(self, node, parm_name):
-        sgtk_all_versions = node.parm(parm_name)
+    def _get_all_versions(self, node):
+        sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
         all_versions_str = sgtk_all_versions.evalAsString()
         all_versions = filter(None, all_versions_str.split(","))
         all_versions = map(int, all_versions)
         return all_versions
 
-    def _populate_versions_for_parm(self, node, parm_name):
-        all_versions = self._get_all_versions(node, parm_name)
+    def _populate_versions(self, node):
+        all_versions = self._get_all_versions(node)
         versions = map(str, all_versions)
         versions.extend(self.VERSION_POLICIES)
         return list(itertools.chain(*zip(versions, versions)))
 
     def populate_versions(self, kwargs):
         node = kwargs["node"]
-        return self._populate_versions_for_parm(node, self.SGTK_ALL_VERSIONS)
+        return self._populate_versions(node)
 
     def _refresh_file_path(self, node, update_version=True):
         pass

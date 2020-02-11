@@ -30,8 +30,7 @@ class ExportNodeHandler(HookBaseClass):
     SGTK_LOCATION = "sgtk_location"
     SGTK_VARIATION = "sgtk_variation"
 
-    OPTIONAL_KEY_PARM_TMPL = "sgtk_optional_key_{}"
-    PRESENT_OPTIONAL_KEYS = "sgtk_present_optional_keys"
+    OPTIONAL_KEYS = "sgtk_optional_keys"
 
     #############################################################################################
     # houdini callback overrides
@@ -49,17 +48,17 @@ class ExportNodeHandler(HookBaseClass):
     #############################################################################################
 
     def _add_optional_key_parms(self, node, parameter_group):
-        if self.PRESENT_OPTIONAL_KEYS in parameter_group:
+        if self.OPTIONAL_KEYS in parameter_group:
             return
 
-        present_optional_keys = hou.StringParmTemplate(
-            self.PRESENT_OPTIONAL_KEYS,
-            "present optional keys",
+        optional_keys = hou.StringParmTemplate(
+            self.OPTIONAL_KEYS,
+            "optional keys",
             1,
             default_value=("{}",),
             is_hidden=True
         )
-        parameter_group.append_template(present_optional_keys)
+        parameter_group.append_template(optional_keys)
 
     def _set_up_node(self, node, parameter_group):
         self._add_optional_key_parms(node, parameter_group)
@@ -208,13 +207,13 @@ class ExportNodeHandler(HookBaseClass):
             field = fields.get(key_name)
             if field:
                 optional_fields[key_name] = field
-        parm = node.parm(self.PRESENT_OPTIONAL_KEYS)
+        parm = node.parm(self.OPTIONAL_KEYS)
         parm.set(json.dumps(optional_fields))
 
-    def _update_all_versions(self, node, all_versions, parm_name):
-        if all_versions != self._get_all_versions(node, parm_name):
+    def _update_all_versions(self, node, all_versions):
+        if all_versions != self._get_all_versions(node):
             all_versions_str = ",".join(map(str, all_versions))
-            sgtk_all_versions = node.parm(parm_name)
+            sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
             sgtk_all_versions.set(all_versions_str)
             
     def _refresh_file_path(self, node, update_version=True):
@@ -229,7 +228,7 @@ class ExportNodeHandler(HookBaseClass):
         
         all_versions = self._resolve_all_versions_from_fields(node, fields, template)
         sgtk_version = node.parm(self.SGTK_VERSION)
-        self._update_all_versions(node, all_versions, self.SGTK_ALL_VERSIONS)
+        self._update_all_versions(node, all_versions)
         
         if update_version:
             sgtk_version.set(len(all_versions))
@@ -303,7 +302,7 @@ class ExportNodeHandler(HookBaseClass):
         sgtk_version.set(index)
 
     def _get_optional_fields(self, node, template):
-        parm = node.parm(self.PRESENT_OPTIONAL_KEYS)
+        parm = node.parm(self.OPTIONAL_KEYS)
         if not parm:
             return {}
         return json.loads(parm.evalAsString())
@@ -324,7 +323,7 @@ class ExportNodeHandler(HookBaseClass):
             current_version = fields.get("version", self.NEXT_VERSION_STR)
             all_versions = self._resolve_all_versions_from_fields(node, fields, template)
             self._populate_from_fields(node, fields)
-            self._update_all_versions(node, all_versions, self.SGTK_ALL_VERSIONS)
+            self._update_all_versions(node, all_versions)
             self._set_version(node, current_version)
             self._refresh_file_path(node, update_version=False)
 
@@ -346,7 +345,6 @@ class ExportNodeHandler(HookBaseClass):
             self,
             node,
             parm_name,
-            all_versions_parm,
             work_template,
             publish_template,
             paths_and_templates,
@@ -368,7 +366,7 @@ class ExportNodeHandler(HookBaseClass):
             # if nothing exists on disk
             # lets get the last rendered one because it might be "<Next>"
             # and it's evaluated to the next available version
-            all_versions = self._get_all_versions(node, all_versions_parm)
+            all_versions = self._get_all_versions(node)
             if not all_versions:
                 # no versions so nothing's been rendered
                 return
@@ -392,7 +390,6 @@ class ExportNodeHandler(HookBaseClass):
         self._get_output_path_and_templates_for_parm(
             node,
             self.OUTPUT_PARM,
-            self.SGTK_ALL_VERSIONS,
             work_template,
             publish_template,
             paths_and_templates
