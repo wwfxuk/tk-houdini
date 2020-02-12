@@ -74,6 +74,17 @@ class HoudiniEngine(sgtk.platform.Engine):
         self._ui_enabled = hasattr(hou, 'ui')
         self.__node_handlers = {}
 
+    @property
+    def context_change_allowed(self):
+        """
+        Whether a context change is allowed without the need for a restart.
+        If a bundle supports on-the-fly context changing, this property should
+        be overridden in the deriving class and forced to return True.
+
+        :returns: bool
+        """
+        return True
+
     def pre_app_init(self):
         """
         Called at startup, but after QT has been initialized.
@@ -621,6 +632,18 @@ class HoudiniEngine(sgtk.platform.Engine):
 
     def post_context_change(self, old_context, new_context):
         self.__node_handlers = {}  # reset node handlers as they may change between contexts
+        try:
+            work_area_template = self.get_template("template_work_area")
+            template_fields = new_context.as_template_fields(work_area_template, validate=False)
+            work_area_path = work_area_template.apply_fields(template_fields)
+        except sgtk.TankError:
+            work_area_path = os.path.expanduser('~')
+        hou.hscript("set -g JOB = {}".format(work_area_path))
+        hou.hscript("set -g ENTITY = {}".format(new_context.entity.get("name", "''")))
+        hou.hscript("set -g ENTITY_TYPE = {}".format(new_context.entity.get("type", "''")))
+        hou.hscript("set -g STEP = {}".format(new_context.step.get("name", "''")))
+        hou.hscript("set -g TASK = {}".format(new_context.task.get("name", "''")))
+        hou.hscript("set -g PROJECT = {}".format(new_context.project.get("name", "''")))
 
     ############################################################################
     # UI Handling

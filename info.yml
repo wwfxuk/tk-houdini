@@ -103,6 +103,12 @@ configuration:
                     fields: context, [name], [version], *
                 extra_args: { type: dict }
 
+    template_work_area:
+        type: template
+        description: A reference to a template which locates the work directory on
+                     disk
+        allows_empty: True
+        
 # the Shotgun fields that this engine needs in order to operate correctly
 requires_shotgun_fields:
 

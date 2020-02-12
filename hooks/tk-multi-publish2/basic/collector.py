@@ -208,7 +208,7 @@ class HoudiniSessionCollector(HookBaseClass):
 
                 if not node_handler or not hasattr(node_handler, "get_output_paths_and_templates"):
                     self.logger.info(
-                        "%s node: %s" % (node_type, node.path())
+                        "%s node: %s" % (node_type, nodes[0].path())
                     )
                     # This isn't an export node or node handler doesn't exist
                     continue

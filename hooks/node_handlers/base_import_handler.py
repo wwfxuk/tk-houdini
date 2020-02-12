@@ -31,6 +31,15 @@ class ImportNodeHandler(HookBaseClass):
     def valid_file_types(self):
         self.extra_args.get(self.VALID_FILE_TYPES, [])
 
+    @staticmethod
+    def _validate_publish_data(publish_data):
+        return all([
+            "entity" in publish_data,
+            "project" in publish_data,
+            "name" in publish_data,
+            "published_file_type" in publish_data
+        ])
+
     #############################################################################################
     # UI customisation
     #############################################################################################
@@ -116,7 +125,7 @@ class ImportNodeHandler(HookBaseClass):
     def _resolve_version(self, all_versions_and_statuses, current):
         self.parent.log_debug("ALL VERSIONS: {!r}".format(all_versions_and_statuses))
         self.parent.log_debug("CURRENT: {}".format(current))
-        all_versions = self._extract_versions(all_versions_and_statuses)
+        all_versions = self._extract_versions(all_versions_and_statuses) or [1]
         if current == self.LATEST_POLICY:
             return max(all_versions)
         elif current == self.LATEST_COMPLETE_POLICY:
@@ -135,6 +144,8 @@ class ImportNodeHandler(HookBaseClass):
             return resolved
         
     def _refresh_file_path_from_publish_data(self, node, publish_data):
+        if not self._validate_publish_data(publish_data):
+            return
         name = publish_data.get("name") or publish_data.get("code", "")
         sgtk_name = node.parm(self.SGTK_NAME)
         sgtk_name.set(name)
@@ -225,6 +236,9 @@ class ImportNodeHandler(HookBaseClass):
         ]
 
     def _resolve_all_versions_and_statuses_from_publish_data(self, publish_data):
+        valid_publish_data = self._validate_publish_data(publish_data)
+        if not valid_publish_data:
+            return []
         filters = self._get_search_filters_from_publish_data(publish_data)
         sg = self.parent.shotgun
         results = sg.find(
@@ -355,7 +369,8 @@ class ImportNodeHandler(HookBaseClass):
             input_parm.set(original_file_path)
 
     def get_input_paths(self, node):
-        if not node.parm(self.USE_SGTK).eval():
+        parm = node.parm(self.USE_SGTK)
+        if not (parm or parm.eval()):
             return []
 
         input_paths = []

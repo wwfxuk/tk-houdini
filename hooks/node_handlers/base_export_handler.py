@@ -404,7 +404,8 @@ class ExportNodeHandler(HookBaseClass):
         return paths_and_templates
 
     def get_output_paths_and_templates(self, node):
-        if not node.parm(self.USE_SGTK).eval():
+        parm = node.parm(self.USE_SGTK)
+        if not (parm or parm.eval()):
             return []
         
         return self._get_output_paths_and_templates(node)
