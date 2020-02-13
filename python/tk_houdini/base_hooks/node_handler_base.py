@@ -133,14 +133,14 @@ class NodeHandlerBase(HookBaseClass):
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
         raise NotImplementedError("'_customise_parameter_group' needs to be implemented")
 
-    def _create_sgtk_parms(self, node, hou=None):
+    def _create_sgtk_parms(self, node, use_sgtk_default=True, hou=None):
         if not hou:
             import hou
         templates = []
         use_sgtk = hou.ToggleParmTemplate(
             self.USE_SGTK,
             "Use Shotgun",
-            default_value=True,
+            default_value=use_sgtk_default,
             script_callback=self.generate_callback_script_str("enable_sgtk"),
             script_callback_language=hou.scriptLanguage.Python
         )

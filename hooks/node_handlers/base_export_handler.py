@@ -346,6 +346,11 @@ class ExportNodeHandler(HookBaseClass):
             glob_path = self._get_sequence_glob_path(path, work_template, fields)
             sequence_paths = glob.glob(glob_path)
             return sequence_paths
+
+    def _make_sgtk_compliant_path(self, path, work_template):
+        fields = work_template.get_fields(path)
+        fields["SEQ"] = "FORMAT: %d"
+        return work_template.apply_fields(fields)
     
     def _get_output_path_and_templates_for_parm(
             self,
@@ -382,7 +387,7 @@ class ExportNodeHandler(HookBaseClass):
             if sequence_paths:
                 item["sequence_paths"] = sequence_paths
 
-        item["path"] = path
+        item["path"] = self._make_sgtk_compliant_path(path, work_template)
 
         if is_deep:
             item["is_deep"] = True

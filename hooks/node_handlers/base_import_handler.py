@@ -1,5 +1,6 @@
 import copy
 import json
+import re
 
 import sgtk
 
@@ -65,14 +66,14 @@ class ImportNodeHandler(HookBaseClass):
             sgtk_last_used = hou.ToggleParmTemplate(
                 self.SGTK_LAST_USED,
                 "shotgun last used",
-                default_value=True,
+                default_value=False,
                 is_hidden=True
             )
             parameter_group.append_template(sgtk_last_used)
         super(ImportNodeHandler, self)._set_up_node(node, parameter_group, hou=hou)
 
     def _create_sgtk_parms(self, node):
-        templates = super(ImportNodeHandler, self)._create_sgtk_parms(node, hou=hou)
+        templates = super(ImportNodeHandler, self)._create_sgtk_parms(node, use_sgtk_default=False, hou=hou)
 
         sgtk_name = hou.StringParmTemplate(
             self.SGTK_NAME,
@@ -180,11 +181,26 @@ class ImportNodeHandler(HookBaseClass):
             path = "Failed to get publish entity"
         else:
             path = self._get_path_from_sg_data(result)
+            path = self._convert_path_to_houdini_seq(path)
 
         input_parm = node.parm(self.INPUT_PARM)
         input_parm.lock(False)
         input_parm.set(path)
         input_parm.lock(True)
+
+    def _convert_path_to_houdini_seq(self, path):
+        regex = re.compile(r"\.([@#]+)\.|\.([%0$F]{2}([0-9])d?)\.")
+        match = regex.search(path)
+        def repl(match):
+            if match.group(0):
+                if match.group(1):
+                    pad_amount = len(match.group(1))
+                else:
+                    pad_amount = match.group(3)
+                return ".$F{}.".format(pad_amount)
+        if match:
+            path = regex.sub(repl, path)
+        return path
 
     def _refresh_file_path(self, node, update_version=True):
         sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
@@ -359,7 +375,8 @@ class ImportNodeHandler(HookBaseClass):
         )
         sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
         sgtk_all_versions.set(json.dumps(all_versions_and_statuses))
-        self.populate_node_from_publish_data(node, publish_data, publish_data["version_policy"])
+        if publish_data:
+            self.populate_node_from_publish_data(node, publish_data, publish_data["version_policy"])
 
         sgtk_last_used = node.parm(self.SGTK_LAST_USED)
         if not sgtk_last_used.eval():

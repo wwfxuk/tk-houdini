@@ -32,10 +32,18 @@ class HoudiniSessionCollector(HookBaseClass):
     the basic collector hook.
     """
 
+    def _get_icon_path(self, icon_name, icons_folders=None):
+        icons_path = os.path.join(self.disk_location, "icons")
+        if icons_folders:
+            icons_folders.append(icons_path)
+        else:
+            icons_folders = [icons_path]
+        return super(HoudiniSessionCollector, self)._get_icon_path(icon_name, icons_folders=icons_folders)
+
     @property
     def common_file_info(self):
         if not hasattr(self, "_common_file_info"):
-
+            
             # do this once to avoid unnecessary processing
             self._common_file_info = {
                 "Alembic Cache": {
@@ -44,7 +52,7 @@ class HoudiniSessionCollector(HookBaseClass):
                     "item_type": "file.alembic",
                 },
                 "Geometry Cache": {
-                    "extensions": ["geo", "bgeo.sc"],
+                    "extensions": ["geo", "bgeo.sc", "sc", "vdb"],
                     "icon": self._get_icon_path("geometry.png"),
                     "item_type": "file.houdini.geometry",
                 },

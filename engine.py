@@ -74,6 +74,9 @@ class HoudiniEngine(sgtk.platform.Engine):
         self._ui_enabled = hasattr(hou, 'ui')
         self.__node_handlers = {}
 
+    def reset_node_handlers(self):
+        self.__node_handlers = {}
+
     def pre_app_init(self):
         """
         Called at startup, but after QT has been initialized.
@@ -89,7 +92,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             tk_houdini = self.import_module("tk_houdini")
             if self.get_setting("automatic_context_switch", True):
                 tk_houdini.ensure_file_change_timer_running()
-        hou.hipFile.addEventCallback(self.__refresh_variables_and_node_handlers_callback)
+        hou.hipFile.addEventCallback(_refresh_variables_and_node_handlers_callback)
 
     def post_app_init(self):
         """
@@ -256,25 +259,9 @@ class HoudiniEngine(sgtk.platform.Engine):
         # Run a series of app instance commands at startup.
         self._run_app_instance_commands()
 
-        self.__update_variables()
+        self.update_variables()
 
-    def __refresh_variables_and_node_handlers_callback(self, event):
-        valid_event_types = (
-            hou.hipFileEventType.AfterSave,
-            hou.hipFileEventType.AfterLoad,
-            hou.hipFileEventType.AfterClear
-        )
-        if event not in valid_event_types:
-            return
-        self.__node_handlers = {}  # reset node handlers as they may change between contexts
-        
-        self.__update_variables()
-
-        for node in self.all_sgtk_nodes():
-            handler = self.node_handler(node)
-            handler._refresh_file_path(node)
-
-    def __update_variables(self):
+    def update_variables(self):
         context = self.context
         if not context:
             return
@@ -304,7 +291,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         
         self.logger.debug("%s: Destroying..." % self)
 
-        hou.hipFile.removeEventCallback(self.__refresh_variables_and_node_handlers_callback)
+        hou.hipFile.removeEventCallback(_refresh_variables_and_node_handlers_callback)
 
         if hasattr(self, "_shelf") and self._shelf:
             # there doesn't appear to be a way to programmatically add a shelf
@@ -987,6 +974,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                 for node in node_type.instances():
                     parm = node.parm("sgtk_identifier")
                     if parm:
+                        self.log_debug(node.path())
                         yield node
 
     def remove_sgtk_parms(self, node):
@@ -1005,3 +993,24 @@ class HoudiniEngine(sgtk.platform.Engine):
         for node in self.all_sgtk_nodes():
             self.restore_sgtk_parms(node)
 
+def _refresh_variables_and_node_handlers_callback(event):
+    valid_event_types = (
+        hou.hipFileEventType.AfterSave,
+        hou.hipFileEventType.AfterLoad,
+        hou.hipFileEventType.AfterClear
+    )
+    if event not in valid_event_types:
+        return
+
+    engine = sgtk.platform.current_engine()
+    if not engine:
+        return
+
+    engine.reset_node_handlers()  # reset node handlers as they may change between contexts
+    
+    engine.update_variables()
+
+    for node in engine.all_sgtk_nodes():
+        handler = engine.node_handler(node)
+        if node.parm("sgtk_folder"):
+            handler._refresh_file_path(node)
