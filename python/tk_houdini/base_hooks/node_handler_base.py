@@ -195,9 +195,10 @@ class NodeHandlerBase(HookBaseClass):
         resolved_version.setConditional(hou.parmCondType.DisableWhen, "{ sgtk_version != -1 }")
         sgtk_templates.append(resolved_version)
         
+        engine_version = self.parent.version if self.parent.version != "Undefined" else "DEV"
         sgtk_folder = hou.FolderParmTemplate(
             self.SGTK_FOLDER,
-            "SGTK",
+            "SGTK (ver: {})".format(engine_version),
             parm_templates=sgtk_templates,
             folder_type=hou.folderType.Simple
         )

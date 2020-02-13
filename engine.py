@@ -74,17 +74,6 @@ class HoudiniEngine(sgtk.platform.Engine):
         self._ui_enabled = hasattr(hou, 'ui')
         self.__node_handlers = {}
 
-    @property
-    def context_change_allowed(self):
-        """
-        Whether a context change is allowed without the need for a restart.
-        If a bundle supports on-the-fly context changing, this property should
-        be overridden in the deriving class and forced to return True.
-
-        :returns: bool
-        """
-        return True
-
     def pre_app_init(self):
         """
         Called at startup, but after QT has been initialized.
@@ -100,6 +89,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             tk_houdini = self.import_module("tk_houdini")
             if self.get_setting("automatic_context_switch", True):
                 tk_houdini.ensure_file_change_timer_running()
+        hou.hipFile.addEventCallback(self.__refresh_variables_and_node_handlers_callback)
 
     def post_app_init(self):
         """
@@ -266,12 +256,55 @@ class HoudiniEngine(sgtk.platform.Engine):
         # Run a series of app instance commands at startup.
         self._run_app_instance_commands()
 
+        self.__update_variables()
+
+    def __refresh_variables_and_node_handlers_callback(self, event):
+        valid_event_types = (
+            hou.hipFileEventType.AfterSave,
+            hou.hipFileEventType.AfterLoad,
+            hou.hipFileEventType.AfterClear
+        )
+        if event not in valid_event_types:
+            return
+        self.__node_handlers = {}  # reset node handlers as they may change between contexts
+        
+        self.__update_variables()
+
+        for node in self.all_sgtk_nodes():
+            handler = self.node_handler(node)
+            handler._refresh_file_path(node)
+
+    def __update_variables(self):
+        context = self.context
+        if not context:
+            return
+        try:
+            work_area_template = self.get_template("template_work_area")
+            if not work_area_template:
+                return
+            template_fields = context.as_template_fields(work_area_template, validate=False)
+            work_area_path = work_area_template.apply_fields(template_fields)
+        except sgtk.TankError:
+            work_area_path = os.path.expanduser('~')
+        hou.hscript("set -g JOB = {}".format(work_area_path))
+        entity = context.entity or {}
+        hou.hscript("set -g ENTITY = {}".format(entity.get("name", "''")))
+        hou.hscript("set -g ENTITY_TYPE = {}".format(entity.get("type", "''")))
+        step = context.step or {}
+        hou.hscript("set -g STEP = {}".format(step.get("name", "''")))
+        task = context.task or {}
+        hou.hscript("set -g TASK = {}".format(task.get("name", "''")))
+        project = context.project or {}
+        hou.hscript("set -g PROJECT = {}".format(project.get("name", "''")))
+
     def destroy_engine(self):
         """
         Engine shutdown.
         """
         
         self.logger.debug("%s: Destroying..." % self)
+
+        hou.hipFile.removeEventCallback(self.__refresh_variables_and_node_handlers_callback)
 
         if hasattr(self, "_shelf") and self._shelf:
             # there doesn't appear to be a way to programmatically add a shelf
@@ -629,21 +662,6 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         # add the function as an event loop callback
         hou.ui.addEventLoopCallback(run_when_idle)
-
-    def post_context_change(self, old_context, new_context):
-        self.__node_handlers = {}  # reset node handlers as they may change between contexts
-        try:
-            work_area_template = self.get_template("template_work_area")
-            template_fields = new_context.as_template_fields(work_area_template, validate=False)
-            work_area_path = work_area_template.apply_fields(template_fields)
-        except sgtk.TankError:
-            work_area_path = os.path.expanduser('~')
-        hou.hscript("set -g JOB = {}".format(work_area_path))
-        hou.hscript("set -g ENTITY = {}".format(new_context.entity.get("name", "''")))
-        hou.hscript("set -g ENTITY_TYPE = {}".format(new_context.entity.get("type", "''")))
-        hou.hscript("set -g STEP = {}".format(new_context.step.get("name", "''")))
-        hou.hscript("set -g TASK = {}".format(new_context.task.get("name", "''")))
-        hou.hscript("set -g PROJECT = {}".format(new_context.project.get("name", "''")))
 
     ############################################################################
     # UI Handling

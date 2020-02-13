@@ -10,7 +10,7 @@ HookBaseClass = sgtk.get_hook_baseclass()
 
 class ImportNodeHandler(HookBaseClass):
 
-    INPUT_PARM = "file"
+    INPUT_PARM = None
 
     LATEST_POLICY = "<LATEST>"
     LATEST_COMPLETE_POLICY = "<LATEST COMPLETE>"
