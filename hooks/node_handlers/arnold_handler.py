@@ -121,10 +121,11 @@ class ArnoldNodeHandler(HookBaseClass):
     #############################################################################################
 
     def _remove_sgtk_items_from_parm_group(self, parameter_group):
+        index = parameter_group.index_of_template(self.SGTK_FOLDER)
+        parameter_group.pop_template(index)
+
         properties_folder = parameter_group.get("main6_1")
         output_folder = properties_folder.get("folder0")
-        index = output_folder.index_of_template(self.SGTK_FOLDER)
-        output_folder.pop_template(index)
 
         ar_aovs = output_folder.get(self.AOV_COUNT)
         ar_aovs_template = ar_aovs.template

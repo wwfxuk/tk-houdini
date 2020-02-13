@@ -292,10 +292,11 @@ class IfdNodeHandler(HookBaseClass):
     #############################################################################################
 
     def _remove_sgtk_items_from_parm_group(self, parameter_group):
+        index = parameter_group.index_of_template(self.SGTK_FOLDER)
+        parameter_group.pop_template(index)
+
         images_folder = parameter_group.get("images6")
-        index = images_folder.index_of_template(self.SGTK_FOLDER)
-        images_folder.pop_template(index)
-        
+
         image_planes_folder = images_folder.get("output6_1")
         vm_numaux = image_planes_folder.get(self.AOV_COUNT)
         vm_numaux_template = vm_numaux.template
@@ -350,7 +351,8 @@ class IfdNodeHandler(HookBaseClass):
         super(IfdNodeHandler, self)._restore_sgtk_parms(node)
         
         dcm_template = self._get_template(self.DCM_WORK_TEMPLATE)
-        dcm_fields = dcm_template.get_fields(dcm_file_path)
+
+        dcm_fields = dcm_template.validate_and_get_fields(dcm_file_path)
         if dcm_fields:
             sgtk_deep_extension = node.parm(self.SGTK_DEEP_EXT)
             entries = sgtk_deep_extension.menuItems()
