@@ -1,4 +1,5 @@
 import copy
+import datetime
 import json
 import re
 
@@ -278,6 +279,11 @@ class ImportNodeHandler(HookBaseClass):
     def _update_publish_data_parm(self, node, publish_data, version_policy):
         self.parent.log_debug("VERSION_POLICY: {}".format(version_policy))
         publish_data["version_policy"] = version_policy
+        for key, val in publish_data.items():
+            # get rid of datetimes, they don't like to serialize and we don't need 'em
+            if isinstance(val, datetime.datetime):
+                publish_data.pop(key)
+
         sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
         sgtk_publish_data.set(json.dumps(publish_data))
         
