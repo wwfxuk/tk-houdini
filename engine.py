@@ -927,6 +927,8 @@ class HoudiniEngine(sgtk.platform.Engine):
     def node_handler(self, node):
         """
         """
+        if not node: 
+            return
         node_type = node.type()
         node_type_name = node_type.name()
         node_category = node_type.category().name()

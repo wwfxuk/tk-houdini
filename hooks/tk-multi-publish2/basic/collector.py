@@ -8,6 +8,7 @@
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights 
 # not expressly granted therein are reserved by Shotgun Software Inc.
 
+import re
 import os
 import hou
 import sgtk
@@ -261,9 +262,48 @@ class HoudiniSessionCollector(HookBaseClass):
                             item.properties["publish_type"] = "Deep Image"
                             item.set_icon_from_path(self._get_icon_path("deep_image.png"))
 
+                        name_path = path
                         if is_sequence:
                             # self._collect_file doesn't fill in sequence_paths correctly so we must do it
-                            item.properties["sequence_paths"] = path_and_templates["sequence_paths"]
+                            sequence_paths = path_and_templates["sequence_paths"]
+                            item.properties["sequence_paths"] = sequence_paths
+                            name_path = sequence_paths[0]
 
                         item.properties["work_template"] = path_and_templates["work_template"]
                         item.properties["publish_template"] = path_and_templates["publish_template"]
+                        item.properties["publish_name"] = self._create_publish_name(name_path, is_sequence)
+
+    def _create_publish_name(self, path, sequence=False):
+        publisher = self.parent
+
+        logger = publisher.logger
+        logger.debug("Getting publish name for path: %s ..." % (path,))
+
+        path_info = publisher.util.get_file_path_components(path)
+        filename = path_info["filename"]
+
+        version_pattern_match = re.search(r"(.*)([._-])v(\d+)\.?(.*)$", filename, re.IGNORECASE)
+
+        publish_name = filename
+        if version_pattern_match:
+            # found a version number, use the other groups to remove it
+            prefix = version_pattern_match.group(1)
+            extension = version_pattern_match.group(4) or ""
+            if extension:
+                publish_name = "%s.%s" % (prefix, extension)
+            else:
+                publish_name = prefix
+
+        frame_pattern_match = re.search(r"(.*)([._-])(\d+)\.(.*)$", publish_name, re.IGNORECASE)        
+        if frame_pattern_match and sequence:
+            # found a frame number, meplace it with #s
+            prefix = frame_pattern_match.group(1)
+            frame_sep = frame_pattern_match.group(2)
+            frame = frame_pattern_match.group(3)
+            display_str = "#" * len(frame)
+            extension = frame_pattern_match.group(4) or ""
+            publish_name = "%s%s%s.%s" % (
+                prefix, frame_sep, display_str, extension)
+       
+        logger.debug("Returning publish name: %s" % (publish_name,))
+        return publish_name

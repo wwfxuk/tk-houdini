@@ -122,8 +122,6 @@ class ExportNodeHandler(HookBaseClass):
         glob_path = path
         frame_key = template.keys.get("SEQ")
         if frame_key:
-            fields["SEQ"] = "FORMAT: $F"
-            glob_path = template.apply_fields(fields)
             frame_format_string = frame_key._extract_format_string(fields["SEQ"])
             frame_spec = frame_key._resolve_frame_spec(frame_format_string, frame_key.format_spec)
             glob_path = re.sub(re.escape(frame_spec), r"*", glob_path)
@@ -345,6 +343,7 @@ class ExportNodeHandler(HookBaseClass):
         fields = copy.deepcopy(fields)
         if "SEQ" in fields:
             fields["SEQ"] = "FORMAT: $F"
+            path = work_template.apply_fields(fields)
             glob_path = self._get_sequence_glob_path(path, work_template, fields)
             sequence_paths = glob.glob(glob_path)
             return sequence_paths
