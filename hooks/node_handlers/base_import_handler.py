@@ -208,9 +208,16 @@ class ImportNodeHandler(HookBaseClass):
         publish_data_str = sgtk_publish_data.evalAsString()
         if not publish_data_str:
             return
-        publish_data = json.loads(publish_data_str.encode("string_escape"))
+        publish_data = json.loads(self._escape_publish_data(publish_data_str))
         
         self._refresh_file_path_from_publish_data(node, publish_data)
+
+    @staticmethod
+    def _escape_publish_data(publish_data_str):
+        try:
+            return publish_data_str.encode("unicode_escape")
+        except UnicodeDecodeError:
+            return publish_data_str.encode("string_escape")
 
     @staticmethod
     def _get_path_from_sg_data(data):
@@ -287,6 +294,7 @@ class ImportNodeHandler(HookBaseClass):
         sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
         sgtk_publish_data.set(json.dumps(publish_data))
         
+    def _update_version_from_publish_data(self, node, publish_data, version_policy):
         sgtk_version = node.parm(self.SGTK_VERSION)
         all_versions = self._extract_versions(
             self._resolve_all_versions_and_statuses_from_publish_data(publish_data)
@@ -306,6 +314,7 @@ class ImportNodeHandler(HookBaseClass):
             elif not self.ACCEPTS_MULTI_SELECTION and isinstance(publish_data, list):
                 publish_data = publish_data[0]
         self._update_publish_data_parm(node, publish_data, version_policy)
+        self._update_version_from_publish_data(node, publish_data, version_policy)
         self._refresh_file_path(node)
 
     def _load_from_shotgun(self, node):
@@ -349,7 +358,7 @@ class ImportNodeHandler(HookBaseClass):
         sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
         default = "[]" if self.ACCEPTS_MULTI_SELECTION else "{}"
         publish_data_str = sgtk_publish_data.evalAsString() or default
-        publish_data = json.loads(publish_data_str.encode("string_escape"))
+        publish_data = json.loads(self._escape_publish_data(publish_data_str))
         self.parent.log_debug("PUBLISH_DATA: {}".format(json.dumps(publish_data, indent=4)))
         return publish_data
 
@@ -361,6 +370,11 @@ class ImportNodeHandler(HookBaseClass):
         version_policy = version if version in self.VERSION_POLICIES else None
         self._update_publish_data_parm(node, publish_data, version_policy)
         super(ImportNodeHandler, self).refresh_file_path_from_version(kwargs)
+        # now write the resolved version back to the publish data
+        sgtk_resolved_version = node.parm(self.SGTK_RESOLVED_VERSION)
+        resolved_version = sgtk_resolved_version.eval()
+        publish_data["version_number"] = int(resolved_version)
+        self._update_publish_data_parm(node, publish_data, version_policy)
 
     #############################################################################################
     # Utilities
@@ -385,10 +399,12 @@ class ImportNodeHandler(HookBaseClass):
             self.populate_node_from_publish_data(node, publish_data, publish_data["version_policy"])
 
         sgtk_last_used = node.parm(self.SGTK_LAST_USED)
-        if not sgtk_last_used.eval():
+        if sgtk_last_used.eval():
             use_sgtk = node.parm(self.USE_SGTK)
-            use_sgtk.set(False)
-            self._enable_sgtk(node, False)
+            use_sgtk.set(True)
+            self._enable_sgtk(node, True)
+        else:
+            input_parm.lock(False)
             input_parm.set(original_file_path)
 
     def get_input_paths(self, node):

@@ -22,13 +22,19 @@ class GeometryNodeHandler(HookBaseClass):
         sgtk_single_frame = self._build_single_file_parm(False)
         sgtk_single_frame.setJoinWithNext(True)
         templates.append(sgtk_single_frame)
-
+	
         choices = self.get_work_template(node).keys["extension"].labelled_choices
+
+	ordered_keys = sorted(choices.keys())
+	ordered_values = []
+	for key in ordered_keys:
+		ordered_values.append(choices[key])
+
         sgtk_cache_ext = hou.MenuParmTemplate(
             self.SGTK_CACHE_EXTENSION,
             "File Extension",
-            choices.keys(),
-            menu_labels=choices.values(),
+            ordered_keys,
+            menu_labels=ordered_values,
             script_callback=self.generate_callback_script_str("refresh_file_path"),
             script_callback_language=hou.scriptLanguage.Python
         )
