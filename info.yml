@@ -85,6 +85,37 @@ configuration:
                 name: { type: str }
                 app_instance: { type: str }
 
+    node_handlers:
+        type: list
+        description: "Setup for node handler classes.
+                     Define what houdini node category and type maps 
+                     to what node handler hook file and also the work
+                     and publish templates required.
+                     Extra args for the node are also put here. See
+                     specific node handler hooks for what these are
+                     meant to be."
+        allows_empty: True
+        default_value: []
+        values:
+            type: dict 
+            items:
+                node_type: { type: str }
+                node_category: { type: str }
+                hook: { type: hook }
+                work_template: 
+                    type: template
+                    fields: context, [name], [version], *
+                publish_template:
+                    type: template
+                    fields: context, [name], [version], *
+                extra_args: { type: dict }
+
+    template_work_area:
+        type: template
+        description: A reference to a template which locates the work directory on
+                     disk
+        allows_empty: True
+        
 # the Shotgun fields that this engine needs in order to operate correctly
 requires_shotgun_fields:
 

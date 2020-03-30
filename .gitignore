@@ -1,3 +1,7 @@
+# Shotgun
+/tk-metadata/
+
+# Python byte code
 *.py[co]
 
 # Packages
@@ -31,3 +35,6 @@ pip-log.txt
 [._]*.s[a-w][a-z]
 [._]s[a-w][a-z]
 
+# IDEs
+/.vscode/
+/.idea/

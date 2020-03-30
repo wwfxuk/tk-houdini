@@ -36,6 +36,7 @@ def bootstrap(plugin_root_path):
     # now see if we are running stand alone or in situ
     try:
         from sgtk_plugin_basic_houdini import manifest
+
         running_stand_alone = True
     except ImportError:
         manifest = None
@@ -113,7 +114,7 @@ def bootstrap(plugin_root_path):
     # environment. These are passed down through the app launcher when running
     # in zero config
     entity = toolkit_mgr.get_entity_from_environment()
-    sgtk_logger.debug("Will launch the engine with entity: %s" % entity)
+    sgtk_logger.debug("Will launch the engine with entity: %s", entity)
 
     # set up a simple progress reporter
     toolkit_mgr.progress_callback = bootstrap_progress_callback
@@ -134,4 +135,3 @@ def bootstrap_progress_callback(progress_value, message):
     :param str message: Progress message string
     """
     print "Bootstrap progress %s%%: %s" % (int(progress_value * 100), message)
-
