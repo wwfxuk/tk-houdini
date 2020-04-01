@@ -675,6 +675,13 @@ class HoudiniEngine(sgtk.platform.Engine):
     # UI Handling
     ############################################################################
 
+    def apply_external_stylesheet(self, widget):
+        """Nicely expose the parent class's ``_apply_external_stylesheet``.
+
+        :param widget: QWidget to apply stylesheet to.
+        """
+        return self._apply_external_stylesheet(self, widget)
+
     def _get_engine_qss_file(self):
         """
         Returns the engine's style.qss file path.
@@ -1011,11 +1018,18 @@ class HoudiniEngine(sgtk.platform.Engine):
             for node_handler in node_handlers:
                 node_type_name = node_handler["node_type"]
                 node_type = hou.nodeType(category, node_type_name)
-                for node in node_type.instances():
-                    parm = node.parm("sgtk_identifier")
-                    if parm:
-                        self.logger.debug("sgtk node: %s", node.path())
-                        yield node
+                if node_type is None:
+                    self.logger.warn(
+                        "No node type %r comes under category %r",
+                        node_type_name,
+                        category,
+                    )
+                else:
+                    for node in node_type.instances():
+                        parm = node.parm("sgtk_identifier")
+                        if parm:
+                            self.logger.debug("sgtk node: %s", node.path())
+                            yield node
 
     def remove_sgtk_parms(self, node):
         """

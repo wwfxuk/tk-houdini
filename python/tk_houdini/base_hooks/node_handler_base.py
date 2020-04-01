@@ -1,3 +1,7 @@
+"""
+Implicit, base hook class for all node handlers.
+"""
+
 import itertools
 
 import sgtk
@@ -112,9 +116,9 @@ class NodeHandlerBase(HookBaseClass):
             )
         return template
 
-    #############################################################################################
+    ###########################################################################
     # Utilities
-    #############################################################################################
+    ###########################################################################
 
     def _remove_sgtk_items_from_parm_group(self, parameter_group):
         """
@@ -163,9 +167,9 @@ class NodeHandlerBase(HookBaseClass):
         if sgtk_identifier and not use_sgtk:
             self._restore_sgtk_parms(node)
 
-    #############################################################################################
+    ###########################################################################
     # houdini callback overrides
-    #############################################################################################
+    ###########################################################################
 
     def on_created(self, node=None):
         """
@@ -231,9 +235,9 @@ class NodeHandlerBase(HookBaseClass):
         """
         pass
 
-    #############################################################################################
+    ###########################################################################
     # UI customisation
-    #############################################################################################
+    ###########################################################################
 
     def _get_parameter_group(self, node):
         """
@@ -396,9 +400,22 @@ class NodeHandlerBase(HookBaseClass):
         if parameter_group:
             self._set_up_node(node, parameter_group)
 
-    #############################################################################################
+    ###########################################################################
     # UI Callbacks
-    #############################################################################################
+    ###########################################################################
+
+    def activate_sgtk(self, node):
+        """
+        Activate Shotgun parameters and callbacks if not already.
+
+        Commonly used by ``tk-multi-loader2`` hooks.
+
+        :param node: A :class:`hou.Node` instance.
+        """
+        use_sgtk = node.parm(self.USE_SGTK)
+        if not use_sgtk.eval():
+            use_sgtk.set(True)
+            self._enable_sgtk(node, True)
 
     def _enable_sgtk(self, node, sgtk_enabled):
         """

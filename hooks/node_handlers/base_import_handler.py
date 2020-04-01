@@ -195,7 +195,6 @@ class ImportNodeHandler(HookBaseClass):
         self.parent.logger.debug("CURRENT: %r", current)
 
         all_versions = self._extract_versions(all_versions_and_statuses) or [1]
-        resolved = int(current)
 
         if current == self.LATEST_COMPLETE_POLICY:
             all_cmpt = [
@@ -205,8 +204,15 @@ class ImportNodeHandler(HookBaseClass):
             ]
             resolved = max(all_cmpt or all_versions)
 
-        elif current == self.LATEST_POLICY or resolved not in all_versions:
+        elif current == self.LATEST_POLICY:
             resolved = max(all_versions)
+
+        else:
+            resolved = int(current)
+            if resolved not in all_versions:
+                self.parent.logger.warn("Current version is not published: %r", current)
+                resolved = max(all_versions)
+                self.parent.logger.warn("Switching to use version: %r", resolved)
 
         return resolved
 
@@ -463,7 +469,7 @@ class ImportNodeHandler(HookBaseClass):
         widget = tk_multi_loader.dialog.AppDialog(
             action_manager, parent=hou.ui.mainQtWindow()
         )
-        self.parent._apply_external_stylesheet(self.parent, widget)
+        self.parent.apply_external_stylesheet(widget)
         widget.setWindowFlags(widget.windowFlags() | sgtk.platform.qt.QtCore.Qt.Window)
         widget.setWindowModality(sgtk.platform.qt.QtCore.Qt.WindowModal)
         action_manager.on_action_triggered.connect(widget.close)
