@@ -981,6 +981,47 @@ def _on_file_change_timeout():
     # get the new context from the file
     new_context = tk.context_from_path(cur_file, cur_context)
 
+    # WWFX: Custom logic to job into a task if pipeline step only has 1 task
+    # See https://wwfx.shotgunstudio.com/detail/Ticket/416
+    if new_context.entity and new_context.step and not new_context.task:
+        filters = [
+            ["project", "is", cur_context.project],
+            ["step", "is", new_context.step],
+            ["entity", "is", new_context.entity],
+        ]
+        possible_tasks = tk.shotgun.find("Task", filters, fields=["content"])
+        if possible_tasks:
+            task = possible_tasks[0]
+            task_message = "Jobbing into task {0[content]!r} (id:{0[id]})"
+
+            # Choose from task names if many unique tasks names exist
+            task_names = {t["content"] for t in possible_tasks}
+            if len(task_names) > 1 and hou.isUIAvailable():
+                kwargs = {
+                    "exclusive": True,
+                    "message": "Choose from a task to job into",
+                    "title": "Tasks",
+                }
+                choices = [
+                    '"{0[content]}" id:{0[id]}'.format(t) for t in possible_tasks
+                ]
+                indices_chosen = hou.ui.selectFromList(choices, **kwargs)
+                if indices_chosen:
+                    task = possible_tasks[indices_chosen[0]]
+                else:
+                    hou.ui.displayMessage(
+                        task_message.format(task), severity=hou.severityType.Warning,
+                    )
+
+            cur_engine.logger.info(task_message.format(task))
+            new_context = tk.context_from_entity("Task", task["id"])
+        else:
+            message = "Unable to job into a Shotgun TASK! Please do not publish."
+            if hou.isUIAvailable():
+                hou.ui.displayMessage(message, severity=hou.severityType.Warning)
+            else:
+                 cur_engine.logger.info(message)
+
     # if the contexts are the same, either the user has not changed context or
     # the context change has already been handled, for example by workfiles2
     if cur_context == new_context:
@@ -1226,4 +1267,3 @@ except Exception as e:
     else:
         print msg
 """
-
