@@ -32,6 +32,7 @@ class AlembicNodeHandler(HookBaseClass):
     """
 
     NODE_TYPE = "alembic"
+    NODE_CATEGORY = "Driver"
 
     OUTPUT_PARM = "filename"
 

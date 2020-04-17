@@ -16,6 +16,7 @@ class NodeHandlerBase(HookBaseClass):
     """
 
     NODE_TYPE = None
+    NODE_CATEGORY = None
 
     VERSION_POLICIES = []
 
@@ -38,13 +39,17 @@ class NodeHandlerBase(HookBaseClass):
 
         Prevents us needing to define, in code, shotgun templates and settings.
         """
-        if cls.NODE_TYPE:
+        if cls.NODE_TYPE and cls.NODE_CATEGORY:
             if hasattr(cls, "_work_template"):
                 return super(NodeHandlerBase, cls).__new__(cls, *args, **kwargs)
             engine = sgtk.platform.current_engine()
             node_handlers = engine.get_setting("node_handlers")
             for handler in node_handlers:
-                if handler["node_type"] == cls.NODE_TYPE:
+                matching_node_category_type = (
+                    handler["node_type"] == cls.NODE_TYPE
+                    and handler["node_category"] == cls.NODE_CATEGORY
+                )
+                if matching_node_category_type :
                     work_template = engine.get_template_by_name(
                         handler["work_template"]
                     )
@@ -54,6 +59,8 @@ class NodeHandlerBase(HookBaseClass):
                     )
                     cls._publish_template = publish_template
                     cls.extra_args = handler["extra_args"]
+                    engine.logger.debug(repr(handler))
+                    break
         return super(NodeHandlerBase, cls).__new__(cls, *args, **kwargs)
 
     @staticmethod
@@ -102,17 +109,17 @@ class NodeHandlerBase(HookBaseClass):
         :raises: :class:`sgtk.TankError` if no template name supplied
             or the template doesn't exist.
         """
-        template_name = self.extra_args.get(template_name)
-        if not template_name:
+        setting_template_name = self.extra_args.get(template_name)
+        if not setting_template_name:
             raise sgtk.TankError(
                 "No template name '{}' defined for node type '{}'"
                 "".format(template_name, self.NODE_TYPE)
             )
-        template = self.parent.get_template_by_name(template_name)
+        template = self.parent.get_template_by_name(setting_template_name)
         if not template:
             raise sgtk.TankError(
                 "Can't find template called '{}' defined for node type '{}'"
-                "".format(template_name, self.NODE_TYPE)
+                "".format(setting_template_name, self.NODE_TYPE)
             )
         return template
 

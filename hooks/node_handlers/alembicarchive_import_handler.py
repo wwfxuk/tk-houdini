@@ -8,9 +8,9 @@ in your project configuration settings with the following inheritance:
     :caption: env/includes/settings/tk-houdini_node_handlers.yml
 
     node_handlers.shot_step:
-    - node_type: alembic
-      node_category: Sop
-      hook: "{self}/node_handlers/base_import_handler.py:{self}/node_handlers/alembic_import_handler.py"
+    - node_type: alembicarchive
+      node_category: Object
+      hook: "{self}/node_handlers/base_import_handler.py:{self}/node_handlers/alembicarchive_import_handler.py"
       work_template: houdini_shot_work_alembic_cache
       publish_template: houdini_shot_publish_alembic_cache
       extra_args:
@@ -23,11 +23,11 @@ import sgtk
 HookBaseClass = sgtk.get_hook_baseclass()
 
 
-class AlembicImportNodeHandler(HookBaseClass):
+class AlembicArchiveImportNodeHandler(HookBaseClass):
     """
     A node handler for alembic input nodes in Houdini.
     """
-    NODE_TYPE = "alembic"
-    NODE_CATEGORY = "Sop"
+    NODE_TYPE = "alembicarchive"
+    NODE_CATEGORY = "Object"
 
     INPUT_PARM = "fileName"

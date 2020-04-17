@@ -37,6 +37,7 @@ class IfdNodeHandler(HookBaseClass):
     """
 
     NODE_TYPE = "ifd"
+    NODE_CATEGORY = "Driver"
 
     OUTPUT_PARM = "vm_picture"
 

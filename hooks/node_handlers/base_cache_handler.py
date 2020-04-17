@@ -71,7 +71,7 @@ class BaseCacheNodeHandler(HookBaseClass):
         """
         sgtk_single_frame = hou.ToggleParmTemplate(
             self.SGTK_SINGLE_FRAME,
-            "Single Frame",
+            "Single File",
             default_value=default,
             script_callback=self.generate_callback_script_str("refresh_file_path"),
             script_callback_language=hou.scriptLanguage.Python,

@@ -30,6 +30,9 @@ class ImageNodeHandler(HookBaseClass):
     A node handler for image file input nodes in Houdini.
     """
 
+    NODE_TYPE = "file"
+    NODE_CATEGORY = "Cop2"
+
     INPUT_PARM = "filename1"
 
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):

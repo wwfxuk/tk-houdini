@@ -22,6 +22,8 @@ class ImportNodeHandler(HookBaseClass):
     """
     Base class for all import node handlers.
     """
+    NODE_TYPE = "alembic"
+    NODE_CATEGORY = "Sop"
 
     INPUT_PARM = None
 
@@ -47,7 +49,7 @@ class ImportNodeHandler(HookBaseClass):
 
         :rtype: list(str)
         """
-        self.extra_args.get(self.VALID_FILE_TYPES, [])
+        return self.extra_args.get(self.VALID_FILE_TYPES, [])
 
     @staticmethod
     def _validate_publish_data(publish_data):

@@ -35,6 +35,7 @@ class ArnoldNodeHandler(HookBaseClass):
     """
 
     NODE_TYPE = "arnold"
+    NODE_CATEGORY = "Driver"
 
     OUTPUT_PARM = "ar_picture"
 

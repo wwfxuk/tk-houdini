@@ -31,6 +31,7 @@ class GeometryNodeHandler(HookBaseClass):
     """
 
     NODE_TYPE = "geometry"
+    NODE_CATEGORY = "Driver"
 
     OUTPUT_PARM = "sopoutput"
 

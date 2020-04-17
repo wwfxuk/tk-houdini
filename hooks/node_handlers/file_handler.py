@@ -29,5 +29,7 @@ class FileNodeHandler(HookBaseClass):
     """
     A node handler for file input nodes in Houdini.
     """
+    NODE_TYPE = "file"
+    NODE_CATEGORY = "Sop"
 
     INPUT_PARM = "file"
