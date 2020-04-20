@@ -264,13 +264,13 @@ class ExportNodeHandler(HookBaseClass):
 
         :rtype: int
         """
-        resolved = max(all_versions or [0]) + 1
         if current != self.NEXT_VERSION_STR:
-            every_version = all_versions + [resolved]
             resolved = int(current)
-            if current not in every_version:
+            every_version = all_versions + [max(all_versions or [0]) + 1]
+            if resolved not in every_version:
                 resolved = max(every_version)
-        return resolved
+            return resolved
+        return max(all_versions or [0]) + 1
 
     def _enable_sgtk(self, node, sgtk_enabled):
         """
