@@ -508,7 +508,8 @@ class ExportNodeHandler(HookBaseClass):
         fields = template.validate_and_get_fields(file_path, skip_keys=skip_keys)
         if fields:
             fields.update(self._get_optional_fields(node, template))
-            fields["SEQ"] = "FORMAT: $F"
+            if "SEQ" in fields:
+                fields["SEQ"] = "FORMAT: $F"
             current_version = fields.get("version", self.NEXT_VERSION_STR)
             all_versions = self._resolve_all_versions_from_fields(
                 node, fields, template
