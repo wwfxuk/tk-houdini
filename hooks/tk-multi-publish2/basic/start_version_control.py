@@ -28,7 +28,7 @@ class HoudiniStartVersionControlPlugin(HookBaseClass):
         """
 
         # look for icon one level up from this hook's folder in "icons" folder
-        return os.path.join(self.disk_location, os.pardir, "icons", "version_up.png")
+        return os.path.join(self.disk_location, "icons", "version_up.png")
 
     @property
     def name(self):
@@ -123,10 +123,10 @@ class HoudiniStartVersionControlPlugin(HookBaseClass):
             version_number = self._get_version_number(path, item)
             if version_number is not None:
                 self.logger.info(
-                    "Houdini '%s' plugin rejected the current session..." % (self.name,)
+                    "Houdini '%s' plugin rejected the current session...", self.name,
                 )
                 self.logger.info("  There is already a version number in the file...")
-                self.logger.info("  Houdini file path: %s" % (path,))
+                self.logger.info("  Houdini file path: %s", path)
                 return {"accepted": False}
         else:
             # the session has not been saved before (no path determined).
@@ -137,7 +137,8 @@ class HoudiniStartVersionControlPlugin(HookBaseClass):
             )
 
         self.logger.info(
-            "Houdini '%s' plugin accepted the current session." % (self.name,),
+            "Houdini '%s' plugin accepted the current session.",
+            self.name,
             extra=_get_version_docs_action(),
         )
 
@@ -212,7 +213,7 @@ class HoudiniStartVersionControlPlugin(HookBaseClass):
         # save to the new version path
         _save_session(version_path)
         self.logger.info("A version number has been added to the Houdini file...")
-        self.logger.info("  Houdini file path: %s" % (version_path,))
+        self.logger.info("  Houdini file path: %s", version_path)
 
     def finalize(self, settings, item):
         """

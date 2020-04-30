@@ -299,7 +299,7 @@ class AppCommandsMenu(AppCommandsUI):
         # format the xml and write it to disk
         xml = _format_xml(six.ensure_str(ET.tostring(root)))
         _write_xml(xml, xml_path)
-        self._engine.logger.debug("Dynamic menu written to: %s" % (xml_path,))
+        self._engine.logger.debug("Dynamic menu written to: %s", xml_path)
 
     def _create_static_menu(self, xml_path):
         """Construct the static Shotgun menu for older versions of Houdini.
@@ -349,7 +349,7 @@ class AppCommandsMenu(AppCommandsUI):
         # format the xml and write it to disk
         xml = _format_xml(ET.tostring(root, encoding="UTF-8"))
         _write_xml(xml, xml_path)
-        self._engine.logger.debug("Static menu written to: %s" % (xml_path,))
+        self._engine.logger.debug("Static menu written to: %s", xml_path)
 
     def _menuNode(self, parent, label, id):
         """Constructs a submenu for the supplied parent."""
@@ -470,7 +470,7 @@ class AppCommandsPanelHandler(AppCommandsUI):
 
         xml = _format_xml(six.ensure_str(ET.tostring(root)))
         _write_xml(xml, panels_file)
-        self._engine.logger.debug("Panels written to: %s" % panels_file)
+        self._engine.logger.debug("Panels written to: %s", panels_file)
 
         # install the panels
         hou.pypanel.installFile(panels_file)
@@ -531,10 +531,10 @@ class AppCommandsShelf(AppCommandsUI):
         if shelf:
             # existing shelf. point it to the new shelf file for this session
             self._engine.logger.debug("Using existing shelf.")
-            self._engine.logger.debug("  Setting shelf file: %s" % shelf_file)
+            self._engine.logger.debug("  Setting shelf file: %s", shelf_file)
             shelf.setFilePath(shelf_file)
         else:
-            self._engine.logger.debug("Creating new shelf: %s" % self._name)
+            self._engine.logger.debug("Creating new shelf: %s", self._name)
             shelf = hou.shelves.newShelf(
                 file_path=shelf_file, name=self._name, label=self._label
             )
@@ -564,7 +564,7 @@ class AppCommandsShelf(AppCommandsUI):
                     tool = self.create_tool(shelf_file, cmd)
                     shelf_tools.append(tool)
 
-        self._engine.logger.debug("Assigning tools to shelf %r..." % shelf)
+        self._engine.logger.debug("Assigning tools to shelf %r...", shelf)
         shelf.setTools(shelf_tools)
         self._engine.logger.debug("...done!")
 
@@ -585,7 +585,7 @@ class AppCommandsShelf(AppCommandsUI):
 
         import hou
 
-        self._engine.logger.debug("Creating tool: %s" % cmd.name)
+        self._engine.logger.debug("Creating tool: %s", cmd.name)
         tool = hou.shelves.newTool(
             file_path=shelf_file,
             name=cmd.name.replace(" ", "_"),
@@ -620,7 +620,7 @@ class AppCommandsShelf(AppCommandsUI):
         # get rid of all the tools on the shelf
         self.destroy_tools()
 
-        self._engine.logger.debug("Destroying shelf: %s" % shelf.name())
+        self._engine.logger.debug("Destroying shelf: %s", shelf.name())
         shelf.destroy()
 
     def destroy_tools(self):
@@ -636,7 +636,7 @@ class AppCommandsShelf(AppCommandsUI):
 
         # destroy all the tools on the shelf to be safe
         for tool in shelf.tools():
-            self._engine.logger.debug("Destroying tool: %s" % tool.name())
+            self._engine.logger.debug("Destroying tool: %s", tool.name())
             tool.destroy()
 
 
@@ -889,7 +889,7 @@ def get_wrapped_panel_widget(engine, widget_class, bundle, title):
                         self.parent().setStyleSheet(self.parent().styleSheet())
             except Exception as e:
                 engine.logger.warning(
-                    "Unable to re-apply stylesheet for panel: %s %s" % (title, e)
+                    "Unable to re-apply stylesheet for panel: %s %s", title, e
                 )
             finally:
                 self._changing_stylesheet = False
@@ -933,7 +933,7 @@ def _jump_to_fs(engine):
         # run the command
         exit_code = os.system(cmd)
         if exit_code != 0:
-            engine.logger.error("Failed to launch '%s'!" % cmd)
+            engine.logger.error("Failed to launch '%s'!", cmd)
 
 
 def _format_xml(xml):
@@ -998,6 +998,47 @@ def _on_file_change_timeout():
 
     # get the new context from the file
     new_context = tk.context_from_path(cur_file, cur_context)
+
+    # WWFX: Custom logic to job into a task if pipeline step only has 1 task
+    # See https://wwfx.shotgunstudio.com/detail/Ticket/416
+    if new_context.entity and new_context.step and not new_context.task:
+        filters = [
+            ["project", "is", cur_context.project],
+            ["step", "is", new_context.step],
+            ["entity", "is", new_context.entity],
+        ]
+        possible_tasks = tk.shotgun.find("Task", filters, fields=["content"])
+        if possible_tasks:
+            task = possible_tasks[0]
+            task_message = "Jobbing into task {0[content]!r} (id:{0[id]})"
+
+            # Choose from task names if many unique tasks names exist
+            task_names = {t["content"] for t in possible_tasks}
+            if len(task_names) > 1 and hou.isUIAvailable():
+                kwargs = {
+                    "exclusive": True,
+                    "message": "Choose from a task to job into",
+                    "title": "Tasks",
+                }
+                choices = [
+                    '"{0[content]}" id:{0[id]}'.format(t) for t in possible_tasks
+                ]
+                indices_chosen = hou.ui.selectFromList(choices, **kwargs)
+                if indices_chosen:
+                    task = possible_tasks[indices_chosen[0]]
+                else:
+                    hou.ui.displayMessage(
+                        task_message.format(task), severity=hou.severityType.Warning,
+                    )
+
+            cur_engine.logger.info(task_message.format(task))
+            new_context = tk.context_from_entity("Task", task["id"])
+        else:
+            message = "Unable to job into a Shotgun TASK! Please do not publish."
+            if hou.isUIAvailable():
+                hou.ui.displayMessage(message, severity=hou.severityType.Warning)
+            else:
+                cur_engine.logger.info(message)
 
     # if the contexts are the same, either the user has not changed context or
     # the context change has already been handled, for example by workfiles2

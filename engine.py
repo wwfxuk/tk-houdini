@@ -7,15 +7,20 @@
 # By accessing, using, copying or modifying this work you indicate your
 # agreement to the Shotgun Pipeline Toolkit Source Code License. All rights
 # not expressly granted therein are reserved by Shotgun Software Inc.
-
 """
 A Houdini engine for Tank.
 """
+from __future__ import absolute_import
+from __future__ import division
+from __future__ import print_function
 
+
+import ctypes
+import itertools
 import os
 import re
-import ctypes
 import shutil
+import sys
 import time
 
 import sgtk
@@ -64,7 +69,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         self._houdini_version = hou.applicationVersion()
 
-        self.logger.debug("%s: Initializing..." % self)
+        self.logger.debug("%s: Initializing...", self)
 
         if self._houdini_version[0] < 14:
             raise sgtk.TankError(
@@ -74,6 +79,11 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         # keep track of if a UI exists
         self._ui_enabled = hasattr(hou, "ui")
+        self.__node_handlers = {}
+
+    def reset_node_handlers(self):
+        """Reset the node handlers cache."""
+        self.__node_handlers = {}
 
     def pre_app_init(self):
         """
@@ -90,6 +100,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             tk_houdini = self.import_module("tk_houdini")
             if self.get_setting("automatic_context_switch", True):
                 tk_houdini.ensure_file_change_timer_running()
+        hou.hipFile.addEventCallback(_refresh_callback)
 
     def post_app_init(self):
         """
@@ -141,9 +152,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                 # populate a callback map. this is a map of command ids to a
                 # corresponding callback. these are used by the menu and shelf
                 # for executing installed app commands.
-                self._callback_map = dict(
-                    (cmd.get_id(), cmd.callback) for cmd in commands
-                )
+                self._callback_map = {cmd.get_id(): cmd.callback for cmd in commands}
 
             if commands and enable_sg_menu:
 
@@ -263,6 +272,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         # Run a series of app instance commands at startup.
         self._run_app_instance_commands()
+        self.update_variables()
 
         # In Houdini 18, we see substantial stability problems related to Qt in
         # builds older than 18.0.348, which is the point when SideFx moved to a
@@ -305,8 +315,8 @@ class HoudiniEngine(sgtk.platform.Engine):
         """
         Engine shutdown.
         """
-
-        self.logger.debug("%s: Destroying..." % self)
+        self.logger.debug("%s: Destroying...", self)
+        hou.hipFile.removeEventCallback(_refresh_callback)
 
         if hasattr(self, "_shelf") and self._shelf:
             # there doesn't appear to be a way to programmatically add a shelf
@@ -372,7 +382,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             # called via the callback. So, we set a flag that `show_panel` can
             # use to short-circuit and return the info needed.
             self._panel_info_request = True
-            self.logger.debug("Retrieving panel widget for %s" % panel_id)
+            self.logger.debug("Retrieving panel widget for %s", panel_id)
             panel_info = panel_dict["callback"]()
             del self._panel_info_request
             return panel_info
@@ -444,8 +454,9 @@ class HoudiniEngine(sgtk.platform.Engine):
                 # likely due to panels file not being a valid file, missing, etc.
                 # hopefully not the case, but try to continue gracefully.
                 self.logger.warning(
-                    "Unable to find interface for panel '%s' in file: %s"
-                    % (panel_id, self._panels_file)
+                    "Unable to find interface for panel '%s' in file: %s",
+                    panel_id,
+                    self._panels_file,
                 )
 
             if panel_interface:
@@ -487,7 +498,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         """
         callback = self._callback_map.get(cmd_id)
         if callback is None:
-            self.logger.error("No callback found for id: %s" % cmd_id)
+            self.logger.error("No callback found for id: %s", cmd_id)
             return
         callback()
 
@@ -681,17 +692,21 @@ class HoudiniEngine(sgtk.platform.Engine):
             cmd_dict = app_instance_commands.get(app_instance_name)
 
             if cmd_dict is None:
-                self.log_warning(
+                self.logger.warning(
                     "%s configuration setting 'run_at_startup' requests app "
-                    "'%s' that is not installed." % (self.name, app_instance_name)
+                    "'%s' that is not installed.",
+                    self.name,
+                    app_instance_name,
                 )
             else:
                 if not setting_cmd_name:
                     # add commands to the list for the given app instance.
-                    for (cmd_name, cmd_function) in cmd_dict.items():
-                        self.log_debug(
-                            "%s startup running app '%s' command '%s'."
-                            % (self.name, app_instance_name, cmd_name)
+                    for (cmd_name, cmd_function) in cmd_dict.iteritems():
+                        self.logger.debug(
+                            "%s startup running app '%s' command '%s'.",
+                            self.name,
+                            app_instance_name,
+                            cmd_name,
                         )
                         commands_to_run.append((cmd_name, cmd_function))
                 else:
@@ -699,23 +714,23 @@ class HoudiniEngine(sgtk.platform.Engine):
                     # setting.
                     cmd_function = cmd_dict.get(setting_cmd_name)
                     if cmd_function:
-                        self.log_debug(
-                            "%s startup running app '%s' command '%s'."
-                            % (self.name, app_instance_name, setting_cmd_name)
+                        self.logger.debug(
+                            "%s startup running app '%s' command '%s'.",
+                            self.name,
+                            app_instance_name,
+                            setting_cmd_name,
                         )
                         commands_to_run.append((setting_cmd_name, cmd_function))
                     else:
                         known_commands = ", ".join("'%s'" % name for name in cmd_dict)
-                        self.log_warning(
+                        self.logger.warning(
                             "%s configuration setting 'run_at_startup' "
                             "requests app '%s' unknown command '%s'. Known "
-                            "commands: %s"
-                            % (
-                                self.name,
-                                app_instance_name,
-                                setting_cmd_name,
-                                known_commands,
-                            )
+                            "commands: %s",
+                            self.name,
+                            app_instance_name,
+                            setting_cmd_name,
+                            known_commands,
                         )
 
         # no commands to run. just bail
@@ -740,7 +755,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
             for (cmd_name, command) in commands_to_run:
                 # iterate over all the commands and execute them.
-                self.log_debug("Executing startup command: %s" % (cmd_name,))
+                self.logger.debug("Executing startup command: %s", cmd_name)
                 command()
 
             # have the function unregister itself. it does this by looping over
@@ -762,6 +777,13 @@ class HoudiniEngine(sgtk.platform.Engine):
     ############################################################################
     # UI Handling
     ############################################################################
+
+    def apply_external_stylesheet(self, widget):
+        """Nicely expose the parent class's ``_apply_external_stylesheet``.
+
+        :param widget: QWidget to apply stylesheet to.
+        """
+        return self._apply_external_stylesheet(self, widget)
 
     def _get_engine_qss_file(self):
         """
@@ -908,11 +930,8 @@ class HoudiniEngine(sgtk.platform.Engine):
             # Anything beyond 16.5.481 bundles a PySide2 version that gives us
             # a usable hwnd directly. We also check to make sure this is Qt5,
             # since SideFX still offers Qt4/PySide builds of modern Houdinis.
-            if hou.applicationVersion() >= (
-                16,
-                5,
-                481,
-            ) and QtCore.__version__.startswith("5."):
+            is_qt5 = QtCore.__version__.startswith("5.")
+            if is_qt5 and hou.applicationVersion() >= (16, 5, 481):
                 hwnd = dialog.winId()
             else:
                 ctypes.pythonapi.PyCObject_AsVoidPtr.restype = ctypes.c_void_p
@@ -1001,7 +1020,6 @@ class HoudiniEngine(sgtk.platform.Engine):
         """
         Open a file dialog to choose a file path to save the current session to
         """
-
         from sgtk.platform.qt import QtGui
 
         # houdini doesn't appear to have a "save as" dialog accessible via
@@ -1016,17 +1034,15 @@ class HoudiniEngine(sgtk.platform.Engine):
         file_dialog.setLabelText(QtGui.QFileDialog.Reject, "Cancel")
         file_dialog.setOption(QtGui.QFileDialog.DontResolveSymlinks)
         file_dialog.setOption(QtGui.QFileDialog.DontUseNativeDialog)
-        if not file_dialog.exec_():
-            return
-        path = file_dialog.selectedFiles()[0]
-        hou.hipFile.save(file_name=path)
+        if file_dialog.exec_():
+            path = file_dialog.selectedFiles()[0]
+            hou.hipFile.save(file_name=path)
 
     def _get_dialog_parent(self):
         """
         Get the QWidget parent for all dialogs created through show_dialog &
         show_modal.
         """
-
         from sgtk.platform.qt import QtGui
 
         parent = None
@@ -1039,7 +1055,6 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         # older versions do not...
         else:
-
             # attempt to find the houdini main window for parenting. The default
             # implementation in tk-core uses the activeWindow which can be None
             # and can also be an already open toolkit dialog.
@@ -1056,5 +1071,163 @@ class HoudiniEngine(sgtk.platform.Engine):
                 ):
                     parent = widget
 
-        self.logger.debug("Found top level widget %s for dialog parenting" % (parent,))
+        self.logger.debug("Found top level widget %s for dialog parenting", parent)
         return parent
+
+    def update_variables(self):
+        """
+        Update houdini variables in the current session.
+
+        Also sets sgtk specific variables for potential use by artists.
+        """
+        context = self.context
+        if not context:
+            return
+        try:
+            work_area_template = self.get_template("template_work_area")
+            if not work_area_template:
+                return
+            template_fields = context.as_template_fields(
+                work_area_template, validate=False
+            )
+            work_area_path = work_area_template.apply_fields(template_fields)
+        except sgtk.TankError:
+            work_area_path = os.path.expanduser("~")
+        hou.hscript("set -g JOB = {}".format(work_area_path))
+        entity = context.entity or {}
+        hou.hscript("set -g ENTITY = {}".format(entity.get("name", "''")))
+        hou.hscript("set -g ENTITY_TYPE = {}".format(entity.get("type", "''")))
+        step = context.step or {}
+        hou.hscript("set -g STEP = {}".format(step.get("name", "''")))
+        task = context.task or {}
+        hou.hscript("set -g TASK = {}".format(task.get("name", "''")))
+        project = context.project or {}
+        hou.hscript("set -g PROJECT = {}".format(project.get("name", "''")))
+
+    def node_handler(self, node):
+        """
+        Get the node handler hook for the given node.
+
+        :param node: A :class:`hou.Node` instance.
+
+        :returns: A :class:`NodeHandlerBase` instance.
+        """
+        if not node:
+            return
+        node_type = node.type()
+        node_type_name = node_type.name()
+        node_category = node_type.category().name()
+        category_handler = self.__node_handlers.setdefault(node_category, {})
+        hook_instance = category_handler.get(node_type_name, False)
+
+        if hook_instance is False:
+            node_handlers = self.get_setting("node_handlers")
+            hook_instance = None
+            for handler in node_handlers:
+                setup_hook = (
+                    handler["node_category"] == node_category
+                    and handler["node_type"] == node_type_name
+                )
+                if setup_hook:
+                    tk_houdini = self.import_module("tk_houdini")
+                    base_class = tk_houdini.base_hooks.NodeHandlerBase
+                    hook_instance = self.create_hook_instance(
+                        handler["hook"], base_class=base_class,
+                    )
+                    break
+            category_handler[node_type_name] = hook_instance
+
+        return hook_instance
+
+    def all_sgtk_nodes(self):
+        """
+        Iterate over all the nodes in the scene that contains sgtk parameters.
+
+        :rtype: Generator[:class:`hou.Node`]
+        """
+        node_type_categories = hou.nodeTypeCategories()
+        node_handler_settings = self.get_setting("node_handlers")
+
+        def key_func(item):
+            return item["node_category"]
+
+        grouped = itertools.groupby(
+            sorted(node_handler_settings, key=key_func), key=key_func
+        )
+
+        for category_name, node_handlers in grouped:
+            category = node_type_categories[category_name]
+            for node_handler in node_handlers:
+                node_type_name = node_handler["node_type"]
+                node_type = hou.nodeType(category, node_type_name)
+                if node_type is None:
+                    self.logger.warn(
+                        "No node type %r comes under category %r",
+                        node_type_name,
+                        category,
+                    )
+                else:
+                    for node in node_type.instances():
+                        parm = node.parm("sgtk_identifier")
+                        if parm:
+                            self.logger.debug("sgtk node: %s", node.path())
+                            yield node
+
+    def remove_sgtk_parms(self, node):
+        """
+        Remove all sgtk parms on the given node.
+
+        :param node: A :class:`hou.Node` instance.
+        """
+        handler = self.node_handler(node)
+        handler.remove_sgtk_parms(node)
+
+    def remove_all_sgtk_parms(self):
+        """
+        Remove all sgtk parms in the scene.
+        """
+        for node in self.all_sgtk_nodes():
+            self.remove_sgtk_parms(node)
+
+    def restore_sgtk_parms(self, node):
+        """
+        Restore all sgtk parms on the given node.
+
+        :param node: A :class:`hou.Node` instance.
+        """
+        handler = self.node_handler(node)
+        handler.restore_sgtk_parms(node)
+
+    def restore_all_sgtk_parms(self):
+        """
+        Restore all sgtk parms in the scene.
+        """
+        for node in self.all_sgtk_nodes():
+            self.restore_sgtk_parms(node)
+
+
+def _refresh_callback(event):
+    """
+    Callback to refresh all variables and node handler classes.
+
+    This can happen on load, save and clear.
+
+    :param event: A :class:`hou.hipFileEventType` event.
+    """
+    valid_event_types = (
+        hou.hipFileEventType.AfterSave,
+        hou.hipFileEventType.AfterLoad,
+        hou.hipFileEventType.AfterClear,
+    )
+    if event not in valid_event_types:
+        return
+
+    engine = sgtk.platform.current_engine()
+    if engine:
+        # reset node handlers as they may change between contexts
+        engine.reset_node_handlers()
+        engine.update_variables()
+        for node in engine.all_sgtk_nodes():
+            handler = engine.node_handler(node)
+            if node.parm("sgtk_folder"):
+                handler._refresh_file_path(node, update_version=False)

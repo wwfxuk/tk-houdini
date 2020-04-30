@@ -89,8 +89,17 @@ class HoudiniLauncher(SoftwareLauncher):
         # path. this provides us access to the bootstrap module which contains
         # helper methods for constructing the proper environment based on the
         # bootstrap scanario.
-        tk_houdini_python_path = os.path.join(self.disk_location, "python",)
+        tk_houdini_python_path = os.path.join(self.disk_location, "python")
         sys.path.insert(0, tk_houdini_python_path)
+        houdini_path = os.environ.get("HOUDINI_PATH", [])
+        if houdini_path:
+            houdini_path = houdini_path.split(os.pathsep)
+            if "&" in houdini_path:
+                houdini_path.remove("&")
+        houdini_path += [os.path.join(self.disk_location, "houdini"), "&"]
+        self.logger.debug(os.pathsep.join(houdini_path))
+
+        os.environ["HOUDINI_PATH"] = os.pathsep.join(houdini_path)
 
         from tk_houdini import bootstrap
 
@@ -101,7 +110,7 @@ class HoudiniLauncher(SoftwareLauncher):
 
             # Prepare the launch environment with variables required by the
             # plugin bootstrap.
-            self.logger.debug("Launch plugins: %s" % (launch_plugins,))
+            self.logger.debug("Launch plugins: %s", launch_plugins)
             required_env = bootstrap.get_plugin_startup_env(launch_plugins)
 
             # Add context and site info
@@ -123,7 +132,7 @@ class HoudiniLauncher(SoftwareLauncher):
             # If we have a file to open, add it to the end of the args so Houdini opens the file.
             args = " ".join([args, file_to_open])
 
-        self.logger.debug("Launch environment: %s" % (required_env,))
+        self.logger.debug("Launch environment: %s", required_env)
 
         return LaunchInformation(exec_path, args, required_env)
 
@@ -143,7 +152,7 @@ class HoudiniLauncher(SoftwareLauncher):
                 supported_sw_versions.append(sw_version)
             else:
                 self.logger.debug(
-                    "SoftwareVersion %s is not supported: %s" % (sw_version, reason)
+                    "SoftwareVersion %s is not supported: %s", sw_version, reason
                 )
 
         return supported_sw_versions
@@ -152,7 +161,7 @@ class HoudiniLauncher(SoftwareLauncher):
 
         # use the bundled engine icon
         icon_path = os.path.join(self.disk_location, "icon_256.png")
-        self.logger.debug("Using icon path: %s" % (icon_path,))
+        self.logger.debug("Using icon path: %s", icon_path)
 
         # all the executable templates for the current OS
         executable_templates = self.EXECUTABLE_TEMPLATES.get(
@@ -197,8 +206,7 @@ class HoudiniLauncher(SoftwareLauncher):
                     or executable_product not in self.EXECUTABLE_TO_PRODUCT.values()
                 ):
                     self.logger.debug(
-                        "Product '%s' is unrecognized. Skipping."
-                        % (executable_product,)
+                        "Product '%s' is unrecognized. Skipping.", executable_product
                     )
                     continue
 

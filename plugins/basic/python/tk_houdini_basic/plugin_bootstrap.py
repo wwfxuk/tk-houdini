@@ -114,7 +114,7 @@ def bootstrap(plugin_root_path):
     # environment. These are passed down through the app launcher when running
     # in zero config
     entity = toolkit_mgr.get_entity_from_environment()
-    sgtk_logger.debug("Will launch the engine with entity: %s" % entity)
+    sgtk_logger.debug("Will launch the engine with entity: %s", entity)
 
     # set up a simple progress reporter
     toolkit_mgr.progress_callback = bootstrap_progress_callback

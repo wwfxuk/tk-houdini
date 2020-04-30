@@ -17,14 +17,33 @@ HookBaseClass = sgtk.get_hook_baseclass()
 # A dict of dicts organized by category, type and output file parm
 _HOUDINI_OUTPUTS = {
     # rops
-    hou.ropNodeTypeCategory(): {
-        "alembic": "filename",  # alembic cache
-        "comp": "copoutput",  # composite
-        "ifd": "vm_picture",  # mantra render node
-        "opengl": "picture",  # opengl render
-        "wren": "wr_picture",  # wren wireframe
-    },
+    hou.ropNodeTypeCategory(): [
+        "alembic",  # alembic cache
+        "geometry",  # geometry
+        "ifd",  # mantra render node
+        "arnold",  # arnold render node
+    ],
 }
+
+
+def _iter_output_nodes():
+    """Iterate over all output nodes in the scene.
+
+    For a more functional programming approach, you can try::
+
+        for category, type_names in _HOUDINI_OUTPUTS.items():
+            node_types = (hou.nodeType(category, name) for name in type_names)
+            for node_type in filter(None, node_types):  # Strip None node_type
+                yield category, node_type, node_type.instances() or ()
+
+    :return: Node category, node type and all node instances.
+    :rtype: Generator[hou.NodeTypeCategory, hou.NodeType, tuple[hou.Node]]
+    """
+    for category, type_names in _HOUDINI_OUTPUTS.items():
+        for name in type_names:
+            node_type = hou.nodeType(category, name)
+            if node_type is not None:
+                yield category, node_type, node_type.instances() or ()
 
 
 class HoudiniSessionCollector(HookBaseClass):
@@ -32,6 +51,63 @@ class HoudiniSessionCollector(HookBaseClass):
     Collector that operates on the current houdini session. Should inherit from
     the basic collector hook.
     """
+
+    def _get_icon_path(self, icon_name, icons_folders=None):
+        icons_path = os.path.join(self.disk_location, "icons")
+        if icons_folders:
+            icons_folders.append(icons_path)
+        else:
+            icons_folders = [icons_path]
+        return super(HoudiniSessionCollector, self)._get_icon_path(
+            icon_name, icons_folders=icons_folders
+        )
+
+    @property
+    def common_file_info(self):
+        """Get a mapping of file types information.
+
+        Sets up/stores it as `self._common_file_info` if not initialised.
+
+        :return: File types information
+        :rtype: dict[str, dict[str]]
+        """
+        if not hasattr(self, "_common_file_info"):
+
+            # do this once to avoid unnecessary processing
+            self._common_file_info = {
+                "Alembic Cache": {
+                    "extensions": ["abc"],
+                    "icon": self._get_icon_path("alembic.png"),
+                    "item_type": "file.alembic",
+                },
+                "Geometry Cache": {
+                    "extensions": ["geo", "bgeo.sc", "sc", "vdb"],
+                    "icon": self._get_icon_path("geometry.png"),
+                    "item_type": "file.houdini.geometry",
+                },
+                "Rendered Image": {
+                    "extensions": ["exr", "rat"],
+                    "icon": self._get_icon_path("image_sequence.png"),
+                    "item_type": "file.image",
+                },
+                "Ass File": {
+                    "extensions": ["ass"],
+                    "icon": self._get_icon_path("ass_file.png"),
+                    "item_type": "file.arnold.ass",
+                },
+                "Ifd Cache": {
+                    "extensions": ["ifd"],
+                    "icon": self._get_icon_path("ifd_file.png"),
+                    "item_type": "file.houdini.ifd",
+                },
+                "Material X File": {
+                    "extensions": ["mtlx"],
+                    "icon": self._get_icon_path("materialX.png"),
+                    "item_type": "file.arnold.mtlx",
+                },
+            }
+
+        return self._common_file_info
 
     @property
     def settings(self):
@@ -61,11 +137,13 @@ class HoudiniSessionCollector(HookBaseClass):
             "Work Template": {
                 "type": "template",
                 "default": None,
-                "description": "Template path for artist work files. Should "
-                "correspond to a template defined in "
-                "templates.yml. If configured, is made available"
-                "to publish plugins via the collected item's "
-                "properties. ",
+                "description": (
+                    "Template path for artist work files. Should "
+                    "correspond to a template defined in "
+                    "templates.yml. If configured, is made available"
+                    "to publish plugins via the collected item's "
+                    "properties. "
+                ),
             },
         }
 
@@ -84,14 +162,6 @@ class HoudiniSessionCollector(HookBaseClass):
         """
         # create an item representing the current houdini session
         item = self.collect_current_houdini_session(settings, parent_item)
-
-        # remember if we collect any alembic/mantra nodes
-        self._alembic_nodes_collected = False
-        self._mantra_nodes_collected = False
-
-        # methods to collect tk alembic/mantra nodes if the app is installed
-        self.collect_tk_alembicnodes(item)
-        self.collect_tk_mantranodes(item)
 
         # collect other, non-toolkit outputs to present for publishing
         self.collect_node_outputs(item)
@@ -124,7 +194,7 @@ class HoudiniSessionCollector(HookBaseClass):
         )
 
         # get the icon path to display for this item
-        icon_path = os.path.join(self.disk_location, os.pardir, "icons", "houdini.png")
+        icon_path = os.path.join(self.disk_location, "icons", "houdini.png")
         session_item.set_icon_from_path(icon_path)
 
         # if a work template is defined, add it to the item properties so that
@@ -153,169 +223,84 @@ class HoudiniSessionCollector(HookBaseClass):
         :param parent_item: Parent Item instance
         """
 
-        for node_category in _HOUDINI_OUTPUTS:
-            for node_type in _HOUDINI_OUTPUTS[node_category]:
+        engine = self.parent.engine
 
-                if node_type == "alembic" and self._alembic_nodes_collected:
-                    self.logger.debug(
-                        "Skipping regular alembic node collection since tk "
-                        "alembic nodes were collected. "
+        for _, node_type, nodes in _iter_output_nodes():
+            type_name = node_type.name()
+            get_output_paths_and_templates = None
+            # iterate over each node
+            for node in nodes:
+                if get_output_paths_and_templates is None:
+                    get_output_paths_and_templates = getattr(
+                        engine.node_handler(node),
+                        "get_output_paths_and_templates",
+                        None,
                     )
-                    continue
+                    if get_output_paths_and_templates is None:
+                        # This isn't an export node or missing handler
+                        self.logger.info("%s node: %s", type_name, node.path())
+                        break
 
-                if node_type == "ifd" and self._mantra_nodes_collected:
-                    self.logger.debug(
-                        "Skipping regular mantra node collection since tk "
-                        "mantra nodes were collected. "
-                    )
-                    continue
+                # get the evaluated path parm value
+                self.logger.info("Processing %s node: %s", type_name, node.path())
+                paths_and_templates = get_output_paths_and_templates(node)
+                node_item = parent_item.create_item(
+                    "houdini.node.{}".format(type_name), "", node.name()
+                )
 
-                path_parm_name = _HOUDINI_OUTPUTS[node_category][node_type]
-
-                # get all the nodes for the category and type
-                nodes = hou.nodeType(node_category, node_type).instances()
-
-                # iterate over each node
-                for node in nodes:
-
-                    # get the evaluated path parm value
-                    path = node.parm(path_parm_name).eval()
-
-                    # ensure the output path exists
-                    if not os.path.exists(path):
+                for path_and_templates in paths_and_templates:
+                    path = path_and_templates["path"]
+                    # Check that something was generated
+                    # Path might point to an image number that doesn't exist, so better
+                    # check the sequence paths also as these have been found already
+                    if not (
+                        os.path.exists(path) or path_and_templates.get("sequence_paths")
+                    ):
                         continue
 
-                    self.logger.info(
-                        "Processing %s node: %s" % (node_type, node.path())
-                    )
+                    self.logger.info("Processing %s node: %s", node_type, node.path())
+                    is_sequence = "sequence_paths" in path_and_templates
 
                     # allow the base class to collect and create the item. it
                     # should know how to handle the output path
                     item = super(HoudiniSessionCollector, self)._collect_file(
-                        parent_item, path, frame_sequence=True
+                        node_item, path, frame_sequence=is_sequence
                     )
 
-                    # the item has been created. update the display name to
-                    # include the node path to make it clear to the user how it
-                    # was collected within the current session.
-                    item.name = "%s (%s)" % (item.name, node.path())
+                    if (
+                        item.type_spec == "file.image"
+                        and "is_deep" in path_and_templates
+                    ):
+                        # Handle deep renders, which can only be exr files annoyingly
+                        sequence = " Sequence" if is_sequence else ""
+                        item.type_spec = "file.image.deep{}".format(
+                            sequence.lower().replace(" ", ".")
+                        )
+                        item.name = "Deep Image{}".format(sequence)
+                        item.properties["publish_type"] = "Deep Image"
+                        item.set_icon_from_path(self._get_icon_path("deep_image.png"))
 
-    def collect_tk_alembicnodes(self, parent_item):
-        """
-        Checks for an installed `tk-houdini-alembicnode` app. If installed, will
-        search for instances of the node in the current session and create an
-        item for each one with an output on disk.
+                    if is_sequence:
+                        # self._collect_file doesn't fill in
+                        # sequence_paths correctly so we must do it
+                        sequence_paths = path_and_templates["sequence_paths"]
+                        item.properties["sequence_paths"] = sequence_paths
 
-        :param parent_item: The item to parent new items to.
-        """
+                    template = path_and_templates["work_template"]
+                    item.properties["work_template"] = template
+                    item.properties["publish_template"] = path_and_templates[
+                        "publish_template"
+                    ]
 
-        publisher = self.parent
-        engine = publisher.engine
+                    fields = template.get_fields(path)
 
-        alembicnode_app = engine.apps.get("tk-houdini-alembicnode")
-        if not alembicnode_app:
-            self.logger.debug(
-                "The tk-houdini-alembicnode app is not installed. "
-                "Will not attempt to collect those nodes."
-            )
-            return
+                    publish_name_tokens = []
+                    for key in ["name", "location", "variation", "identifier"]:
+                        token = fields.get(key)
+                        if token:
+                            publish_name_tokens.append(token.title())
 
-        try:
-            tk_alembic_nodes = alembicnode_app.get_nodes()
-        except AttributeError:
-            self.logger.warning(
-                "Unable to query the session for tk-houdini-alembicnode "
-                "instances. It looks like perhaps an older version of the "
-                "app is in use which does not support querying the nodes. "
-                "Consider updating the app to allow publishing their outputs."
-            )
-            return
-
-        # retrieve the work file template defined by the app. we'll set this
-        # on the collected alembicnode items for use during publishing.
-        work_template = alembicnode_app.get_work_file_template()
-
-        for node in tk_alembic_nodes:
-
-            out_path = alembicnode_app.get_output_path(node)
-
-            if not os.path.exists(out_path):
-                continue
-
-            self.logger.info("Processing sgtk_alembic node: %s" % (node.path(),))
-
-            # allow the base class to collect and create the item. it
-            # should know how to handle the output path
-            item = super(HoudiniSessionCollector, self)._collect_file(
-                parent_item, out_path
-            )
-
-            # the item has been created. update the display name to
-            # include the node path to make it clear to the user how it
-            # was collected within the current session.
-            item.name = "%s (%s)" % (item.name, node.path())
-
-            if work_template:
-                item.properties["work_template"] = work_template
-
-            self._alembic_nodes_collected = True
-
-    def collect_tk_mantranodes(self, parent_item):
-        """
-        Checks for an installed `tk-houdini-mantranode` app. If installed, will
-        search for instances of the node in the current session and create an
-        item for each one with an output on disk.
-
-        :param parent_item: The item to parent new items to.
-        """
-
-        publisher = self.parent
-        engine = publisher.engine
-
-        mantranode_app = engine.apps.get("tk-houdini-mantranode")
-        if not mantranode_app:
-            self.logger.debug(
-                "The tk-houdini-mantranode app is not installed. "
-                "Will not attempt to collect those nodes."
-            )
-            return
-
-        try:
-            tk_mantra_nodes = mantranode_app.get_nodes()
-        except AttributeError:
-            self.logger.warning(
-                "Unable to query the session for tk-houdini-mantranode "
-                "instances. It looks like perhaps an older version of the "
-                "app is in use which does not support querying the nodes. "
-                "Consider updating the app to allow publishing their outputs."
-            )
-            return
-
-        # retrieve the work file template defined by the app. we'll set this
-        # on the collected alembicnode items for use during publishing.
-        work_template = mantranode_app.get_work_file_template()
-
-        for node in tk_mantra_nodes:
-
-            out_path = mantranode_app.get_output_path(node)
-
-            if not os.path.exists(out_path):
-                continue
-
-            self.logger.info("Processing sgtk_mantra node: %s" % (node.path(),))
-
-            # allow the base class to collect and create the item. it
-            # should know how to handle the output path
-            item = super(HoudiniSessionCollector, self)._collect_file(
-                parent_item, out_path, frame_sequence=True
-            )
-
-            # the item has been created. update the display name to
-            # include the node path to make it clear to the user how it
-            # was collected within the current session.
-            item.name = "%s (%s)" % (item.name, node.path())
-
-            if work_template:
-                item.properties["work_template"] = work_template
-
-            self._mantra_nodes_collected = True
+                    publish_name = "{} ({})".format(
+                        ", ".join(publish_name_tokens), item.type_display
+                    )
+                    item.properties["publish_name"] = publish_name

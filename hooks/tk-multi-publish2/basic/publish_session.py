@@ -116,9 +116,11 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
             "Publish Template": {
                 "type": "template",
                 "default": None,
-                "description": "Template path for published work files. Should"
-                "correspond to a template defined in "
-                "templates.yml.",
+                "description": (
+                    "Template path for published work files. Should"
+                    "correspond to a template defined in "
+                    "templates.yml."
+                ),
             }
         }
 
@@ -181,7 +183,7 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
             )
 
         self.logger.info(
-            "Houdini '%s' plugin accepted the current Houdini session." % (self.name,)
+            "Houdini '%s' plugin accepted the current Houdini session.", self.name,
         )
         return {"accepted": True, "checked": True}
 
@@ -232,8 +234,10 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
                     extra={
                         "action_button": {
                             "label": "Save File",
-                            "tooltip": "Save the current Houdini session to a "
-                            "different file name",
+                            "tooltip": (
+                                "Save the current Houdini session to a "
+                                "different file name"
+                            ),
                             # will launch wf2 if configured
                             "callback": _get_save_as_action(),
                         }
@@ -265,8 +269,10 @@ class HoudiniSessionPublishPlugin(HookBaseClass):
                 extra={
                     "action_button": {
                         "label": "Save to v%s" % (version,),
-                        "tooltip": "Save to the next available version number, "
-                        "v%s" % (version,),
+                        "tooltip": (
+                            "Save to the next available version number, "
+                            "v%s" % version
+                        ),
                         "callback": lambda: _save_session(next_version_path),
                     }
                 },

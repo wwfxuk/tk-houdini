@@ -65,7 +65,7 @@ def plugin_startup():
             if "httplib" in sys.modules:
                 del sys.modules["httplib"]
             if "urllib2" in sys.modules:
-                del sys.modiles["urllib2"]
+                del sys.modules["urllib2"]
 
     # the plugin python path will be just below the root level. add it to
     # sys.path
