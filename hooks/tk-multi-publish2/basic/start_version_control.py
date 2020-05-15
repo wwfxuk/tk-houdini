@@ -137,7 +137,8 @@ class HoudiniStartVersionControlPlugin(HookBaseClass):
             )
 
         self.logger.info(
-            "Houdini '%s' plugin accepted the current session.", self.name,
+            "Houdini '%s' plugin accepted the current session.",
+            self.name,
             extra=_get_version_docs_action(),
         )
 

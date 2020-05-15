@@ -259,6 +259,7 @@ class HoudiniSessionCollector(HookBaseClass):
                     ):
                         continue
 
+                    self.logger.info("Processing %s node: %s", node_type, node.path())
                     is_sequence = "sequence_paths" in path_and_templates
 
                     # allow the base class to collect and create the item. it

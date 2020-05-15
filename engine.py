@@ -18,6 +18,7 @@ from __future__ import print_function
 import ctypes
 import itertools
 import os
+import re
 import shutil
 import sys
 import time
@@ -50,7 +51,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             host_info["version"] = hou.applicationVersionString()
         else:
             # Fallback to older way
-            host_info["version"] = ".".join([str(v) for v in hou.applicationVersion()])
+            host_info["version"] = ".".join([str(v) for v in self._houdini_version])
 
         if hasattr(hou, "applicationName"):
             host_info["name"] = hou.applicationName()
@@ -66,9 +67,11 @@ class HoudiniEngine(sgtk.platform.Engine):
         Main initialization entry point.
         """
 
+        self._houdini_version = hou.applicationVersion()
+
         self.logger.debug("%s: Initializing...", self)
 
-        if hou.applicationVersion()[0] < 14:
+        if self._houdini_version[0] < 14:
             raise sgtk.TankError(
                 "Your version of Houdini is not supported. Currently, Toolkit "
                 "only supports version 14+."
@@ -89,7 +92,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         if not self._ui_enabled:
             return
 
-        if hou.applicationVersion()[0] >= 15:
+        if self._houdini_version[0] >= 15:
             # In houdini 15+, we can use the dynamic menus and shelf api to
             # properly handle cases where a file is loaded outside of a SG
             # context. Make sure the timer that looks for current file changes
@@ -106,12 +109,29 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         from sgtk.platform.qt import QtCore
 
+        tk_houdini = self.import_module("tk_houdini")
+        bootstrap = tk_houdini.bootstrap
+
+        # load any app otls
+        if bootstrap.g_temp_env in os.environ:
+            # Figure out the tmp OP Library path for this session
+            oplibrary_path = os.environ[bootstrap.g_temp_env].replace("\\", "/")
+
+            # Setup the OTLs that need to be loaded for the Toolkit apps
+            def _load_otls():
+                self._load_app_otls(oplibrary_path)
+
+            # We have the same problem here on Windows that we have above with
+            # the population of the shelf. If we defer the execution of the otl
+            # loading by an event loop cycle, Houdini loads up quickly.
+            if self.has_ui and sgtk.util.is_windows():
+                QtCore.QTimer.singleShot(1, _load_otls)
+            else:
+                _load_otls()
+
         if not self.has_ui:
             # no UI. everything after this requires the UI!
             return
-
-        tk_houdini = self.import_module("tk_houdini")
-        bootstrap = tk_houdini.bootstrap
 
         if bootstrap.g_temp_env in os.environ:
 
@@ -140,7 +160,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                 menu_file = self._safe_path_join(xml_tmp_dir, "MainMenuCommon")
 
                 # as of houdini 12.5 add .xml
-                if hou.applicationVersion() > (12, 5, 0):
+                if self._houdini_version > (12, 5, 0):
                     menu_file = menu_file + ".xml"
 
                 # keep the reference to the menu handler for convenience so
@@ -201,7 +221,7 @@ class HoudiniEngine(sgtk.platform.Engine):
                 # March 2019: The fix above is no longer working in houdini 17.0.506.
                 # Instead, wait for the UI to be created before attempting to create
                 # shelves.
-                if sys.platform.startswith("win"):
+                if sgtk.util.is_windows():
                     QtCore.QTimer.singleShot(
                         100, _poll_for_ui_available_then_setup_shelves
                     )
@@ -228,21 +248,6 @@ class HoudiniEngine(sgtk.platform.Engine):
                     )
                     panels.create_panels(self._panels_file)
 
-            # Figure out the tmp OP Library path for this session
-            oplibrary_path = os.environ[bootstrap.g_temp_env].replace("\\", "/")
-
-            # Setup the OTLs that need to be loaded for the Toolkit apps
-            def _load_otls():
-                self._load_otls(oplibrary_path)
-
-            # We have the same problem here on Windows that we have above with
-            # the population of the shelf. If we defer the execution of the otl
-            # loading by an event loop cycle, Houdini loads up quickly.
-            if sys.platform.startswith("win"):
-                QtCore.QTimer.singleShot(1, _load_otls)
-            else:
-                _load_otls()
-
         # tell QT to interpret C strings as utf-8
         utf8 = QtCore.QTextCodec.codecForName("utf-8")
         QtCore.QTextCodec.setCodecForCStrings(utf8)
@@ -261,7 +266,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         #
         # NOTE: Except for 16+. It's no longer safe and causes lots of styling
         # problems in Houdini's UI globally.
-        if hou.applicationVersion() < (16, 0, 0):
+        if self._houdini_version < (16, 0, 0):
             self.logger.debug("Houdini < 16 detected: applying dark look and feel.")
             self._initialize_dark_look_and_feel()
 
@@ -269,35 +274,42 @@ class HoudiniEngine(sgtk.platform.Engine):
         self._run_app_instance_commands()
         self.update_variables()
 
-    def update_variables(self):
-        """
-        Update houdini variables in the current session.
+        # In Houdini 18, we see substantial stability problems related to Qt in
+        # builds older than 18.0.348, which is the point when SideFx moved to a
+        # newer version of Qt and PySide2. We've reproduced problems on OSX and
+        # Linux, and we have reports of crashes on Windows, as well. All of these
+        # issues are no longer a problem in 348+, so we'll warn users on builds
+        # of H18 older than that.
+        if self._houdini_version[0] == 18 and self._houdini_version[-1] < 348:
+            # We need to wait until Houdini idles before showing the message.
+            # If we show it right now, it will pop up behind Houdini's splash
+            # screen, and since the dialog is modal you end up in a situation
+            # where Houdini does not continue to launch, and you can't see or
+            # dismiss the dialog to unblock it.
+            def run_when_idle():
+                hou.ui.displayMessage(
+                    text="Houdini 18 versions older than 18.0.348 are unstable when using Shotgun "
+                    "Toolkit. Be aware that Houdini crashes may occur if attempting to use "
+                    "Toolkit apps from your current Houdini session. Shotgun recommends updating "
+                    "Houdini to 18.0.348 or newer.",
+                    title="Shotgun Toolkit",
+                    severity=hou.severityType.Warning,
+                )
 
-        Also sets sgtk specific variables for potential use by artists.
-        """
-        context = self.context
-        if not context:
-            return
-        try:
-            work_area_template = self.get_template("template_work_area")
-            if not work_area_template:
-                return
-            template_fields = context.as_template_fields(
-                work_area_template, validate=False
-            )
-            work_area_path = work_area_template.apply_fields(template_fields)
-        except sgtk.TankError:
-            work_area_path = os.path.expanduser("~")
-        hou.hscript("set -g JOB = {}".format(work_area_path))
-        entity = context.entity or {}
-        hou.hscript("set -g ENTITY = {}".format(entity.get("name", "''")))
-        hou.hscript("set -g ENTITY_TYPE = {}".format(entity.get("type", "''")))
-        step = context.step or {}
-        hou.hscript("set -g STEP = {}".format(step.get("name", "''")))
-        task = context.task or {}
-        hou.hscript("set -g TASK = {}".format(task.get("name", "''")))
-        project = context.project or {}
-        hou.hscript("set -g PROJECT = {}".format(project.get("name", "''")))
+                # Have the function unregister itself. It does this by looping over
+                # all the registered callbacks and finding itself by looking for a
+                # special attribute that is added below (just before registering it
+                # as an event loop callback).
+                for callback in hou.ui.eventLoopCallbacks():
+                    if hasattr(callback, "tk_houdini_stability_msg"):
+                        hou.ui.removeEventLoopCallback(callback)
+
+            # Add the special attribute that the function will look use to find
+            # and unregister itself when executed.
+            run_when_idle.tk_houdini_stability_msg = True
+
+            # Add the function as an event loop callback.
+            hou.ui.addEventLoopCallback(run_when_idle)
 
     def destroy_engine(self):
         """
@@ -457,7 +469,7 @@ class HoudiniEngine(sgtk.platform.Engine):
 
                 # different calls to set the python panel interface in Houdini
                 # 14/15
-                if hou.applicationVersion()[0] >= 15:
+                if self._houdini_version[0] >= 15:
                     panel.setActiveInterface(panel_interface)
                 else:
                     # if SESI puts in a fix for setInterface, then panels
@@ -502,24 +514,115 @@ class HoudiniEngine(sgtk.platform.Engine):
         """
         return os.path.join(*args).replace(os.path.sep, "/")
 
-    def _load_otls(self, oplibrary_path):
+    @staticmethod
+    def _is_version_less_or_equal(check_version, base_version):
+        """
+        Checks if the folder version is less than or equal to the current Houdini session version.
+        :param check_version:
+        :param base_version:
+        :return:
+        """
+
+        def version_less_or_equal(v1, v2):
+            # A recursive function that everytime it need to check a lower level in the version tuples
+            # it calls itself again with a sliced the version tuple excluding the first number in the tuple.
+            if v1[0] != "x" and v2[0] != "x":
+                if int(v1[0]) > int(v2[0]):
+                    # We have two numbers and the check number is greater than the base so
+                    # no match, and no need to check lower levels.
+                    return False
+                if int(v1[0]) < int(v2[0]):
+                    # We have two numbers and the check number is less than the base so
+                    # this is a match no need to check deeper
+                    return True
+
+            # Either one of the numbers is "x" or the numbers are the same
+            if len(v1) > 1:
+                # We have more levels so, check another level deeper.
+                # slice off this level so that it will check the next level.
+                return version_less_or_equal(v1[1:], v2[1:])
+            else:
+                # No more levels to check this must be a match since x means any version number.
+                # or the numbers are the same (though this is unlikely as this would mean two identical folders.)
+                return True
+
+        return version_less_or_equal(check_version, base_version)
+
+    def _load_app_otls(self, oplibrary_path):
         """
         Load any OTLs provided by applications.
 
         Look in any application folder for a otls subdirectory and load any .otl
         file from there.
+        :param oplibrary_path: A temporary path that can be used to install otls to
         """
+
+        def install_otls_from_dir(root_path):
+            for filename in os.listdir(root_path):
+                full_path = self._safe_path_join(root_path, filename)
+                if os.path.splitext(filename)[-1] == ".otl":
+                    path = full_path.replace(os.path.sep, "/")
+                    hou.hda.installFile(path, oplibrary_path, True)
+
         for app in self.apps.values():
             otl_path = self._safe_path_join(app.disk_location, "otls")
-            if not os.path.exists(otl_path):
+            for a_path in self._get_otl_paths(otl_path):
+                install_otls_from_dir(a_path)
+
+    def _get_otl_paths(self, otl_path):
+        """
+        For a given app otl folder, return a list of otl folders.
+        The list will always contain the root otl_path, but also may contain a sub
+        version folder if found.
+        It will also check to see if there are any Houdini version folder inside
+        following the format of "v18.0.0". "x" characters can be used instead of
+        a number to represent any number.
+        """
+        if not os.path.exists(otl_path):
+            return []
+
+        # Add the root otl folder to the list of paths to check, so as to maintain
+        # backwards compatibility, with apps that may not have version folder otls.
+        otl_paths = [otl_path]
+
+        # Check for Houdini version folder containing version specific otl files.
+        version_folder = None
+        for filename in os.listdir(otl_path):
+            full_path = self._safe_path_join(otl_path, filename)
+            if not os.path.isdir(full_path):
                 continue
 
-            for filename in os.listdir(otl_path):
-                if os.path.splitext(filename)[-1] == ".otl":
-                    path = self._safe_path_join(otl_path, filename).replace(
-                        os.path.sep, "/"
-                    )
-                    hou.hda.installFile(path, oplibrary_path, True)
+            # https://regex101.com/r/3ujhFJ/2
+            # matches folder in the following format vx.x.x where "x" is either
+            # actually an x character or any number.
+            matches = re.search(r"^v(\d+|x).(\d+|x).(\d+|x)$", filename)
+            if not matches:
+                continue
+            # Now we have a version folder, check to see if the folder version
+            # is less than or equal to the current Houdini session version,
+            # as we don't want to use otls for versions higher than our current version,
+            if not self._is_version_less_or_equal(
+                matches.groups(), self._houdini_version
+            ):
+                continue
+            # The folder version could be used so we should now check if it is more suitable
+            # than any folder versions we have previously found. Ultimately we want to
+            # find a version number folder that is lower but as closely matches
+            # our current Houdini version.
+            if version_folder is None or self._is_version_less_or_equal(
+                version_folder[0], matches.groups()
+            ):
+                # Either there is no previous match, in which case set this match
+                # as the current one to import, or the current match is less than the
+                # new match, so we should use the new match.
+                # Don't import yet, wait for all matches to be compared.
+                version_folder = (matches.groups(), full_path)
+
+        if version_folder:
+            # We found a version specific otl folder install any otls in that.
+            otl_paths.append(version_folder[1])
+
+        return otl_paths
 
     def _panels_supported(self):
         """
@@ -529,7 +632,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         ver = hou.applicationVersion()
 
         # first version where saving python panel in desktop was fixed
-        if sys.platform.startswith("darwin"):
+        if sgtk.util.is_macos():
             # We have some serious painting problems with Python panes in
             # H16 that are specific to OS X. We have word out to SESI, and
             # are waiting to hear back from them as to how we might be able
@@ -561,7 +664,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         # Build a dictionary mapping app instance names to dictionaries of
         # commands they registered with the engine.
         app_instance_commands = {}
-        for (cmd_name, value) in self.commands.iteritems():
+        for (cmd_name, value) in self.commands.items():
             app_instance = value["properties"].get("app")
             if app_instance:
                 # Add entry 'command name: command function' to the command
@@ -718,6 +821,8 @@ class HoudiniEngine(sgtk.platform.Engine):
             self, title, bundle, widget, parent
         )
 
+        h_ver = hou.applicationVersion()
+
         if dialog.parent():
             # parenting crushes the dialog's style. This seems to work to reset
             # the style to the dark look and feel in preparation for the
@@ -729,12 +834,18 @@ class HoudiniEngine(sgtk.platform.Engine):
             # we break its styling in a few places if we zero out the main window's
             # stylesheet. We're now compensating for the problems that arise in
             # the engine's style.qss.
-            if hou.applicationVersion() < (16, 0, 0):
+            if h_ver < (16, 0, 0):
                 dialog.parent().setStyleSheet("")
 
             # This will ensure our dialogs don't fall behind Houdini's main
             # window when they lose focus.
-            if sys.platform.startswith("darwin"):
+            #
+            # NOTE: Setting the window flags in H18 on OSX causes a crash. Once
+            # that bug is resolved we can re-enable this. The result is that
+            # on H18 without the window flags set per the below, our dialogs
+            # will fall behind Houdini if they lose focus. This is only an issue
+            # for versions of H18 older than 18.0.348.
+            if sgtk.util.is_macos() and (h_ver[0] == 18 and h_ver >= (18, 0, 348)):
                 dialog.setWindowFlags(dialog.windowFlags() | QtCore.Qt.Tool)
         else:
             # no parent found, so style should be ok. this is probably,
@@ -760,6 +871,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         # and combine the two into a single, unified stylesheet for the dialog
         # and widget.
         engine_root_path = self._get_engine_root_path()
+        h_major_ver = hou.applicationVersion()[0]
 
         if bundle.name in ["tk-multi-shotgunpanel", "tk-multi-publish2"]:
             if bundle.name == "tk-multi-shotgunpanel":
@@ -775,7 +887,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             # already assigned to the widget. This means that the engine
             # styling is helping patch holes in any app- or framework-level
             # qss that might have already been applied.
-            if hou.applicationVersion()[0] >= 16:
+            if h_major_ver >= 16:
                 # We don't apply the engine's style.qss to the dialog for the panel,
                 # but we do for the publisher. This will make sure that the tank
                 # dialog's header and info slide-out widget is properly styled. The
@@ -799,7 +911,7 @@ class HoudiniEngine(sgtk.platform.Engine):
             # engine level qss only.
             #
             # If we're in 16+, we also need to apply the engine-level qss.
-            if hou.applicationVersion()[0] >= 16:
+            if h_major_ver >= 16:
                 self._apply_external_styleshet(self, dialog)
                 qss = dialog.styleSheet()
                 qss = qss.replace("{{ENGINE_ROOT_PATH}}", engine_root_path)
@@ -814,7 +926,7 @@ class HoudiniEngine(sgtk.platform.Engine):
         dialog.activateWindow()
 
         # special case to get windows to raise the dialog
-        if sys.platform == "win32":
+        if sgtk.util.is_windows():
             # Anything beyond 16.5.481 bundles a PySide2 version that gives us
             # a usable hwnd directly. We also check to make sure this is Qt5,
             # since SideFX still offers Qt4/PySide builds of modern Houdinis.
@@ -961,6 +1073,36 @@ class HoudiniEngine(sgtk.platform.Engine):
 
         self.logger.debug("Found top level widget %s for dialog parenting", parent)
         return parent
+
+    def update_variables(self):
+        """
+        Update houdini variables in the current session.
+
+        Also sets sgtk specific variables for potential use by artists.
+        """
+        context = self.context
+        if not context:
+            return
+        try:
+            work_area_template = self.get_template("template_work_area")
+            if not work_area_template:
+                return
+            template_fields = context.as_template_fields(
+                work_area_template, validate=False
+            )
+            work_area_path = work_area_template.apply_fields(template_fields)
+        except sgtk.TankError:
+            work_area_path = os.path.expanduser("~")
+        hou.hscript("set -g JOB = {}".format(work_area_path))
+        entity = context.entity or {}
+        hou.hscript("set -g ENTITY = {}".format(entity.get("name", "''")))
+        hou.hscript("set -g ENTITY_TYPE = {}".format(entity.get("type", "''")))
+        step = context.step or {}
+        hou.hscript("set -g STEP = {}".format(step.get("name", "''")))
+        task = context.task or {}
+        hou.hscript("set -g TASK = {}".format(task.get("name", "''")))
+        project = context.project or {}
+        hou.hscript("set -g PROJECT = {}".format(project.get("name", "''")))
 
     def node_handler(self, node):
         """
