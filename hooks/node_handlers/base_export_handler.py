@@ -532,7 +532,10 @@ class ExportNodeHandler(HookBaseClass):
         using_next = node.parm(self.USING_NEXT_VERSION)
         entries = sgtk_version.menuItems()
         if using_next and using_next.eval():
-            index = entries.index(self.NEXT_VERSION_STR)
+            if self.NEXT_VERSION_STR in entries:
+                index = entries.index(self.NEXT_VERSION_STR)
+            else:
+                index = len(entries)
         elif version_str in entries:
             index = entries.index(version_str)
         else:
