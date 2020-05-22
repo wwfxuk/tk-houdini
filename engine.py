@@ -1087,5 +1087,6 @@ def _refresh_callback(event):
         engine.update_variables()
         for node in engine.all_sgtk_nodes():
             handler = engine.node_handler(node)
-            if node.parm("sgtk_folder"):
+            use_sgtk = node.parm("use_sgtk")
+            if use_sgtk and use_sgtk.eval():
                 handler._refresh_file_path(node)

@@ -279,12 +279,15 @@ class ExportNodeHandler(HookBaseClass):
                 glob_path = re.sub(regex, r"\1*\3", glob_path)
 
             glob_path = self._get_sequence_glob_path(glob_path, template, fields)
-
+            self.parent.logger.debug("GLOB_PATH: %s", glob_path)
             version_paths = glob.iglob(glob_path)
             for key, paths in itertools.groupby(version_paths, key=os.path.dirname):
                 version_path = paths.next()
-                fields = template.get_fields(version_path)
-                versions.add(int(fields["version"]))
+                self.parent.logger.debug("KEY: %s", key)
+                self.parent.logger.debug("VERSION_PATH: %s", version_path)
+                fields = template.validate_and_get_fields(version_path)
+                if fields:
+                    versions.add(int(fields["version"]))
         return sorted(versions)
 
     def _resolve_version(self, all_versions, current):
@@ -429,7 +432,7 @@ class ExportNodeHandler(HookBaseClass):
             new_path = self.get_work_template(node).apply_fields(fields)
         except sgtk.TankError:
             new_path = self.DEFAULT_ERROR_STRING
-            self.logger.exception('Failed to calculate path for "%s"', node)
+            self.parent.logger.exception('Failed to calculate path for "%s"', node)
 
         output_parm.lock(False)
         output_parm.set(new_path)
