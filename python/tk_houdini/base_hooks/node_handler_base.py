@@ -3,6 +3,7 @@ Implicit, base hook class for all node handlers.
 """
 
 import itertools
+import re
 
 import sgtk
 
@@ -208,7 +209,16 @@ class NodeHandlerBase(HookBaseClass):
 
         :param node: A :class:`hou.Node` instance.
         """
-        pass
+        engine_version = self.parent.version
+        folder = node.parm(self.SGTK_FOLDER)
+        folder_template = folder.parmTemplate()
+        folder_name = folder_template.folderNames()[0]
+        version_match = re.match(r"^SGTK \(ver: (.*)\)$", folder_name)
+        if version_match:
+            version = version_match.group(1)
+            if engine_version != version:
+                self.remove_sgtk_parms(node)
+                self.restore_sgtk_parms(node)
 
     def on_name_changed(self, node=None):
         """
