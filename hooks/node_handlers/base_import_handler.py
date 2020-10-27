@@ -8,6 +8,7 @@ These include:
 
 """
 import datetime
+import glob
 import itertools
 import json
 import re
@@ -50,20 +51,27 @@ class ImportNodeHandler(HookBaseClass):
     SGTK_WORK_RESOLVED_VERSION = "sgtk_work_resolved_version"
     SGTK_CURRENT_TAB = "sgtk_current_tab"
 
-    DEFAULT_SNAPSHOT_DATA = {
-        "node": None,
-        "all_parms": [],
-        "parm": None,
-        "all_versions": [],
-        "current_version": LATEST_POLICY,
-        "template": None,
-    }
+    DEFAULT_SNAPSHOT_DATA = json.dumps(
+        {
+            "node": None,
+            "all_parms": [],
+            "parm": None,
+            "all_versions": [],
+            "current_version": LATEST_POLICY,
+        }
+    )
 
     VALID_FILE_TYPES = "valid_file_types"
 
     ACCEPTS_MULTI_SELECTION = False
 
     PUBLISH, WORK = range(2)
+
+    WORK_VERSION_TEMPLATE = r"v{}"
+    WORK_VERSION_REGEX = WORK_VERSION_TEMPLATE.format(r"(\d+)")
+    SEQUENCE_REGEX = r"\$F\d+"
+
+    NO_VERSIONS = "No version"
 
     @property
     def valid_file_types(self):
@@ -138,7 +146,7 @@ class ImportNodeHandler(HookBaseClass):
                 self.SGTK_WORK_FILE_SNAPSHOT,
                 "previous node",
                 1,
-                default_value=(json.dumps(self.DEFAULT_SNAPSHOT_DATA),),
+                default_value=(self.DEFAULT_SNAPSHOT_DATA,),
                 is_hidden=True,
             )
             parameter_group.append_template(sgtk_work_file_snap)
@@ -227,7 +235,7 @@ class ImportNodeHandler(HookBaseClass):
 
         node_parm = hou.StringParmTemplate(
             self.SGTK_NODE_NAME,
-            "Sgtk Node",
+            "Node",
             1,
             string_type=hou.stringParmType.NodeReference,
             script_callback=self.generate_callback_script_str(
@@ -284,7 +292,10 @@ class ImportNodeHandler(HookBaseClass):
         work_templates.append(refresh_button)
 
         resolved_version = hou.StringParmTemplate(
-            self.SGTK_WORK_RESOLVED_VERSION, "Resolved Version", 1, default_value=("1",)
+            self.SGTK_WORK_RESOLVED_VERSION,
+            "Resolved Version",
+            1,
+            default_value=(self.NO_VERSIONS,),
         )
         resolved_version.setConditional(
             hou.parmCondType.DisableWhen, "{ sgtk_version != -1 }"
@@ -332,6 +343,12 @@ class ImportNodeHandler(HookBaseClass):
         """
         output_parm = node.parm(self.INPUT_PARM)
         output_parm.lock(sgtk_enabled)
+        if sgtk_enabled:
+            sgtk_path_selection = node.parm(self.SGTK_PATH_SELECTION)
+            if sgtk_path_selection.evalAsInt() == self.PUBLISH:
+                self._refresh_file_path(node)
+            else:
+                self._refresh_file_path_from_node(node)
 
     def enable_sgtk(self, kwargs):
         """
@@ -723,34 +740,62 @@ class ImportNodeHandler(HookBaseClass):
 
         :rtype: int
         """
-        if current != self.LATEST_POLICY:
-            resolved = int(current)
-            if resolved not in all_versions:
-                resolved = max(all_versions)
+        if all_versions:
+            resolved = max(all_versions)
+            if current != self.LATEST_POLICY:
+                current = int(current)
+                if current in all_versions:
+                    resolved = current
             return resolved
-        return max(all_versions or [1])
 
-    def _get_template_fields_and_work_versions(self, parent_node):
+    def _resolve_all_versions_from_path(self, path):
+        unique_versions = set()
+        regex = r"{}|{}".format(self.WORK_VERSION_REGEX, self.SEQUENCE_REGEX)
+        glob_path = re.sub(regex, "*", path)
+        at_least_one_version = False
+        all_paths = glob.iglob(glob_path)
+        for current_path in all_paths:
+            at_least_one_version = True
+            version_match = re.search(self.WORK_VERSION_REGEX, current_path)
+            if version_match:
+                unique_versions.add(int(version_match.group(1)))
+        if at_least_one_version and not unique_versions:
+            # the file exists on disk, but it does not contain a version number
+            return [1]
+        return list(unique_versions)
+
+    def _replace_version_in_path(self, path, version):
+        version_match = re.search(self.WORK_VERSION_REGEX, path)
+        if version_match:
+            current_version = version_match.group(1)
+            if int(current_version) != version:
+                pad = len(current_version)
+                new_version = str(version).zfill(pad)
+                new_version_str = self.WORK_VERSION_TEMPLATE.format(new_version)
+                path = re.sub(self.WORK_VERSION_REGEX, new_version_str, path)
+        return path
+
+    def _get_template_fields_and_work_versions(self, parent_node, parm_name):
         all_versions = []
         template = None
         fields = {}
         if parent_node:
-            path_parm = parent_node.parm(self.SGTK_NODE_PARM)
+            path_parm = parent_node.parm(parm_name)
             if path_parm:
                 path = path_parm.unexpandedString()
                 node_handler = self.parent.node_handler(parent_node)
-                template_name = None
                 if node_handler and hasattr(node_handler, "OUTPUT_PARM"):
                     template = node_handler.get_work_template(parent_node)
                 else:
                     template = self.sgtk.template_from_path(path)
                 if template:
-                    template_name = template.name
                     fields = template.validate_and_get_fields(path)
                     if fields:
                         all_versions = node_handler._resolve_all_versions_from_fields(
                             fields, template
                         )
+                else:
+                    all_versions = self._resolve_all_versions_from_path(path)
         return template, fields, all_versions
 
     def _refresh_file_path_from_node(self, node):
@@ -758,7 +803,8 @@ class ImportNodeHandler(HookBaseClass):
         snapshot_data = json.loads(
             snapshot_parm.evalAsString() or self.DEFAULT_SNAPSHOT_DATA
         )
-
+        parent_parm = node.parm(self.SGTK_NODE_PARM)
+        sgtk_resolved_version = node.parm(self.SGTK_WORK_RESOLVED_VERSION)
         node_path = snapshot_data["node"]
         parent_node = hou.node(node_path)
         if parent_node:
@@ -766,7 +812,6 @@ class ImportNodeHandler(HookBaseClass):
             parent_node_parm.set(node_path)
 
             parm_name = snapshot_data["parm"]
-            parent_parm = node.parm(self.SGTK_NODE_PARM)
             all_parms = snapshot_data["all_parms"]
             if all_parms:
                 index = all_parms.index(parm_name)
@@ -775,33 +820,34 @@ class ImportNodeHandler(HookBaseClass):
             parent_parm.set(index)
 
             (
-                template_name,
+                template,
                 fields,
                 all_versions,
-            ) = self._get_template_fields_and_work_versions(parent_node)
-            snapshot_data["template"] = template_name
+            ) = self._get_template_fields_and_work_versions(parent_node, parm_name)
             snapshot_data["all_versions"] = all_versions
             snapshot_parm.set(json.dumps(snapshot_data))
 
             version = snapshot_data["current_version"]
-            if version == self.LATEST_POLICY:
-                resolved_version = max(all_versions or [1])
-            else:
-                resolved_version = version
+            resolved_version = self._resolve_work_version(all_versions, version)
 
-            sgtk_resolved_version = node.parm(self.SGTK_WORK_RESOLVED_VERSION)
-            sgtk_resolved_version.set(str(resolved_version))
+            sgtk_resolved_version.set(str(resolved_version or self.NO_VERSIONS))
 
-            template = self.parent.get_template_by_name(template_name)
             path_parm = parent_node.parm(parm_name)
             orig_path = path_parm.unexpandedString()
-            if template:
-                fields["version"] = resolved_version
-                path = template.apply_fields(fields)
+            if resolved_version:
+                if template:
+                    fields["version"] = resolved_version
+                    path = template.apply_fields(fields)
+                else:
+                    path = self._replace_version_in_path(orig_path, resolved_version)
             else:
-                path = orig_path
+                path = "Nothing on disk"
 
         else:
+            parent_parm.set(0)
+            sgtk_version = node.parm(self.SGTK_WORK_VERSION)
+            sgtk_version.set(0)
+            sgtk_resolved_version.set(self.NO_VERSIONS)
             path = "No node selected"
 
         snapshot_parm.set(json.dumps(snapshot_data))
@@ -813,18 +859,21 @@ class ImportNodeHandler(HookBaseClass):
     def populate_node_parms_menu(self, kwargs):
         node = kwargs["node"]
         snapshot_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
-        snapshot_data = json.loads(snapshot_parm.evalAsString() or "{}")
+        snapshot_data = json.loads(
+            snapshot_parm.evalAsString() or self.DEFAULT_SNAPSHOT_DATA
+        )
         parms = snapshot_data.get("all_parms", [])
         return list(itertools.chain(*zip(parms, parms)))
 
     def _get_work_versions(self, node):
         snapshot_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
-        snapshot_data = json.loads(snapshot_parm.evalAsString() or "{}")
+        snapshot_data = json.loads(
+            snapshot_parm.evalAsString() or self.DEFAULT_SNAPSHOT_DATA
+        )
         all_versions = snapshot_data.get("all_versions", [])
         return all_versions
 
     def populate_work_versions(self, kwargs):
-        self.logger.debug("populate_work_versions")
         node = kwargs["node"]
         versions = list(map(str, self._get_work_versions(node))) + [self.LATEST_POLICY]
         return list(itertools.chain(*zip(versions, versions)))
@@ -840,14 +889,14 @@ class ImportNodeHandler(HookBaseClass):
         return sorted(parms)
 
     def refresh_from_node_selection(self, kwargs):
-        self.logger.debug("refresh_from_node_selection")
         node = kwargs["node"]
-        parm = kwargs["parm"]
+        parm = node.parm(self.SGTK_NODE_NAME)
         parent_node = parm.evalAsNode()
         snapshot_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
         snapshot_data = json.loads(
             snapshot_parm.evalAsString() or self.DEFAULT_SNAPSHOT_DATA
         )
+        snapshot_json = self.DEFAULT_SNAPSHOT_DATA
         if parent_node:
             snapshot_data["node"] = parent_node.path()
             path_parm = node.parm(self.SGTK_NODE_PARM)
@@ -861,13 +910,13 @@ class ImportNodeHandler(HookBaseClass):
                 index = parms.index(parm_name)
             snapshot_data["parm"] = parm_name
             path_parm.set(index)
-        snapshot_parm.set(json.dumps(snapshot_data))
+            snapshot_json = json.dumps(snapshot_data)
+        snapshot_parm.set(snapshot_json)
         self._refresh_file_path_from_node(node)
 
     def refresh_from_parm_selection(self, kwargs):
-        self.logger.debug("refresh_from_parm_selection")
         node = kwargs["node"]
-        parm = kwargs["parm"]
+        parm = node.parm(self.SGTK_NODE_PARM)
         snapshot_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
         snapshot_data = json.loads(
             snapshot_parm.evalAsString() or self.DEFAULT_SNAPSHOT_DATA
@@ -876,18 +925,14 @@ class ImportNodeHandler(HookBaseClass):
         parm_name = parm.evalAsString()
         snapshot_data["parm"] = parm_name
         if parent_node:
-            (
-                template_name,
-                _,
-                all_versions,
-            ) = self._get_template_fields_and_work_versions(parent_node)
-            snapshot_data["template"] = template_name
+            all_versions = self._get_template_fields_and_work_versions(
+                parent_node, parm_name
+            )[2]
             snapshot_data["all_versions"] = all_versions
         snapshot_parm.set(json.dumps(snapshot_data))
         self._refresh_file_path_from_node(node)
 
     def refresh_from_work_version(self, kwargs):
-        self.logger.debug("refresh_from_work_versions")
         node = kwargs["node"]
         parm = kwargs["parm"]
         snapshot_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
@@ -900,38 +945,50 @@ class ImportNodeHandler(HookBaseClass):
         self._refresh_file_path_from_node(node)
 
     def refresh_work_path(self, kwargs):
-        self.logger.debug("refresh_work_path")
         node = kwargs["node"]
         self._refresh_file_path_from_node(node)
 
     def refresh_from_selection(self, kwargs):
-        self.logger.debug("refresh_from_selection")
         node = kwargs["node"]
-        sgtk_current_tab = node.parm(self.SGTK_CURRENT_TAB)
-        current_selection = self._path_selection(node)
-        sgtk_current_tab.set(current_selection)
-        if current_selection == self.PUBLISH:
-            self._refresh_file_path(node)
+        sgtk_enabled = node.parm(self.USE_SGTK)
+        if sgtk_enabled.eval():
+            sgtk_current_tab = node.parm(self.SGTK_CURRENT_TAB)
+            current_selection = self._path_selection(node)
+            sgtk_current_tab.set(current_selection)
+            if current_selection == self.PUBLISH:
+                self._refresh_file_path(node)
+            else:
+                self._refresh_file_path_from_node(node)
+
+    def _populate_from_snapshot(self, node):
+        snapshot_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
+        self.logger.debug(snapshot_parm.evalAsString())
+        snapshot_data = json.loads(
+            snapshot_parm.evalAsString() or self.DEFAULT_SNAPSHOT_DATA
+        )
+        node_parm = node.parm(self.SGTK_NODE_NAME)
+        node_parm.set(snapshot_data["node"])
+
+        parm_name = snapshot_data["parm"]
+        all_parms = snapshot_data["all_parms"]
+        index = all_parms.index(parm_name)
+        parm_name_parm = node.parm(self.SGTK_NODE_PARM)
+        parm_name_parm.set(index)
+
+        version = snapshot_data["current_version"]
+        all_versions = list(map(str, snapshot_data["all_versions"]))
+        if version == self.LATEST_POLICY:
+            index = len(all_versions)
         else:
-            self._refresh_file_path_from_node(node)
+            index = all_versions.index(version)
+        version_parm = node.parm(self.SGTK_WORK_VERSION)
+        version_parm.set(index)
+
+        self._refresh_file_path_from_node(node)
 
     #############################################################################################
     # Utilities
     #############################################################################################
-
-    def remove_sgtk_parms(self, node):
-        """
-        Remove all sgtk parameters from the node's parameter template group.
-
-        :param node: A :class:`hou.Node` instance containing sgtk parameters.
-        :return: Whether Shotgun parameters were removed from node.
-        :rtype: bool
-        """
-        prev_node_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
-        node_parm = node.parm(self.SGTK_NODE_NAME)
-        node_name = node_parm.evalAsString()
-        prev_node_parm.set(node_name)
-        return super(ImportNodeHandler, self).remove_sgtk_parms(node)
 
     def _remove_sgtk_items_from_parm_group(self, parameter_group):
         """
@@ -960,19 +1017,15 @@ class ImportNodeHandler(HookBaseClass):
         sgtk_all_versions = node.parm(self.SGTK_ALL_VERSIONS)
         sgtk_all_versions.set(json.dumps(all_versions_and_statuses))
 
+        if publish_data:
+            self.populate_node_from_publish_data(
+                node, publish_data, publish_data["version_policy"]
+            )
+
+        self._populate_from_snapshot(node)
+
         sgtk_path_selection = node.parm(self.SGTK_PATH_SELECTION)
         sgtk_path_selection.set(current_tab_index)
-        if current_tab_index == self.PUBLISH:
-            if publish_data:
-                self.populate_node_from_publish_data(
-                    node, publish_data, publish_data["version_policy"]
-                )
-        else:
-            prev_node_parm = node.parm(self.SGTK_WORK_FILE_SNAPSHOT)
-            prev_node_data = json.loads(prev_node_parm.evalAsString() or "{}")
-            if prev_node_data:
-                # node name, param name, versions, current version
-                pass
 
         sgtk_last_used = node.parm(self.SGTK_LAST_USED)
         if sgtk_last_used.eval():
