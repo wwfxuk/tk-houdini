@@ -27,7 +27,10 @@ class AlembicImportNodeHandler(HookBaseClass):
     """
     A node handler for alembic input nodes in Houdini.
     """
+
     NODE_TYPE = "alembic"
     NODE_CATEGORY = "Sop"
 
     INPUT_PARM = "fileName"
+
+    FILECHOOSER_PATTERN = "*.abc"

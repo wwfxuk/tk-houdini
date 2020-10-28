@@ -27,7 +27,10 @@ class AlembicArchiveImportNodeHandler(HookBaseClass):
     """
     A node handler for alembic input nodes in Houdini.
     """
+
     NODE_TYPE = "alembicarchive"
     NODE_CATEGORY = "Object"
 
     INPUT_PARM = "fileName"
+
+    FILECHOOSER_PATTERN = "*.abc"

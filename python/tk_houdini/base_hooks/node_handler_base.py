@@ -461,7 +461,9 @@ class NodeHandlerBase(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param bool sgtk_enabled: The state to set the parameters to.
         """
-        pass
+        kwargs = {"node": node}
+        if sgtk_enabled:
+            self.refresh_file_path(kwargs)
 
     def enable_sgtk(self, kwargs):
         """
@@ -471,8 +473,6 @@ class NodeHandlerBase(HookBaseClass):
         use_sgtk = node.parm(self.USE_SGTK)
         value = use_sgtk.eval()
         self._enable_sgtk(node, value)
-        if value:
-            self.refresh_file_path(kwargs)
 
     def _get_all_versions(self, node):
         """

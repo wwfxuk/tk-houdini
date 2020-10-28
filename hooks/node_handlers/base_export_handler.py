@@ -257,6 +257,7 @@ class ExportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param bool sgtk_enabled: The state to set the parameters to.
         """
+        super(ExportNodeHandler, self)._enable_sgtk(node, sgtk_enabled)
         output_parm = node.parm(self.OUTPUT_PARM)
         output_parm.lock(sgtk_enabled)
 

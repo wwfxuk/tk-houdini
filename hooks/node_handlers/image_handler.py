@@ -22,6 +22,9 @@ in your project configuration settings with the following inheritance:
 """
 import sgtk
 
+import hou
+
+
 HookBaseClass = sgtk.get_hook_baseclass()
 
 
@@ -34,6 +37,8 @@ class ImageNodeHandler(HookBaseClass):
     NODE_CATEGORY = "Cop2"
 
     INPUT_PARM = "filename1"
+
+    HOU_FILE_TYPE = hou.fileType.Image
 
     def _customise_parameter_group(self, node, parameter_group, sgtk_folder):
         """
