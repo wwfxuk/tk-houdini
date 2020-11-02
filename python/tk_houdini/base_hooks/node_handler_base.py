@@ -3,6 +3,7 @@ Implicit, base hook class for all node handlers.
 """
 
 import itertools
+import re
 
 import sgtk
 
@@ -49,7 +50,7 @@ class NodeHandlerBase(HookBaseClass):
                     handler["node_type"] == cls.NODE_TYPE
                     and handler["node_category"] == cls.NODE_CATEGORY
                 )
-                if matching_node_category_type :
+                if matching_node_category_type:
                     work_template = engine.get_template_by_name(
                         handler["work_template"]
                     )
@@ -208,7 +209,16 @@ class NodeHandlerBase(HookBaseClass):
 
         :param node: A :class:`hou.Node` instance.
         """
-        pass
+        engine_version = self.parent.version
+        folder = node.parm(self.SGTK_FOLDER)
+        folder_template = folder.parmTemplate()
+        folder_name = folder_template.folderNames()[0]
+        version_match = re.match(r"^SGTK \(ver: (.*)\)$", folder_name)
+        if version_match:
+            version = version_match.group(1)
+            if engine_version != version:
+                self.remove_sgtk_parms(node)
+                self.restore_sgtk_parms(node)
 
     def on_name_changed(self, node=None):
         """
@@ -292,7 +302,7 @@ class NodeHandlerBase(HookBaseClass):
         """
         return []
 
-    def _create_sgtk_folder(self, node, use_sgtk_default=True, hou=None):
+    def _create_sgtk_parm_fields(self, node, hou=None):
         """
         Create the sgtk folder template.
 
@@ -307,18 +317,8 @@ class NodeHandlerBase(HookBaseClass):
         """
         if not hou:
             import hou
-        sgtk_templates = []
 
-        use_sgtk = hou.ToggleParmTemplate(
-            self.USE_SGTK,
-            "Use Shotgun",
-            default_value=use_sgtk_default,
-            script_callback=self.generate_callback_script_str("enable_sgtk"),
-            script_callback_language=hou.scriptLanguage.Python,
-        )
-        sgtk_templates.append(use_sgtk)
-
-        sgtk_templates.extend(self._create_sgtk_parms(node))
+        sgtk_templates = self._create_sgtk_parms(node)
 
         all_versions = hou.StringParmTemplate(
             self.SGTK_ALL_VERSIONS, "All Versions", 1, is_hidden=True
@@ -363,6 +363,36 @@ class NodeHandlerBase(HookBaseClass):
             hou.parmCondType.DisableWhen, "{ sgtk_version != -1 }"
         )
         sgtk_templates.append(resolved_version)
+
+        return sgtk_templates
+
+    def _create_sgtk_folder(self, node, use_sgtk_default=True, hou=None):
+        """
+        Create the sgtk folder template.
+
+        This contains the common parameters used by all node handlers.
+
+        :param node: A :class:`hou.Node` instance.
+        :param bool use_sgtk_default: Whether the "Use Shotgun" checkbox is to be
+            checked by default.
+        :param hou: The houdini module. We have to lazy load the houdini python
+            module here, but not in the hooks, so use hook's imports and pass it
+            for efficiency.
+        """
+        if not hou:
+            import hou
+        sgtk_templates = []
+
+        use_sgtk = hou.ToggleParmTemplate(
+            self.USE_SGTK,
+            "Use Shotgun",
+            default_value=use_sgtk_default,
+            script_callback=self.generate_callback_script_str("enable_sgtk"),
+            script_callback_language=hou.scriptLanguage.Python,
+        )
+        sgtk_templates.append(use_sgtk)
+
+        sgtk_templates.extend(self._create_sgtk_parm_fields(node, hou))
 
         engine_version = (
             self.parent.version if self.parent.version != "Undefined" else "DEV"
@@ -431,7 +461,9 @@ class NodeHandlerBase(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param bool sgtk_enabled: The state to set the parameters to.
         """
-        pass
+        kwargs = {"node": node}
+        if sgtk_enabled:
+            self.refresh_file_path(kwargs)
 
     def enable_sgtk(self, kwargs):
         """
@@ -441,8 +473,6 @@ class NodeHandlerBase(HookBaseClass):
         use_sgtk = node.parm(self.USE_SGTK)
         value = use_sgtk.eval()
         self._enable_sgtk(node, value)
-        if value:
-            self.refresh_file_path(kwargs)
 
     def _get_all_versions(self, node):
         """
@@ -504,3 +534,25 @@ class NodeHandlerBase(HookBaseClass):
         """
         node = kwargs["node"]
         self._refresh_file_path(node)
+
+    def _resolve_all_versions_from_fields(self, fields, template):
+        """
+        Using fields and a shotgun template, get all the versions on disk
+        that relate to the current item.
+
+        :param dict fields: The template fields.
+        :param template: An :class:`sgtk.Template`.
+
+        :rtype: list(int)
+        """
+        skip = ["version"]
+        skip += [
+            key.name
+            for key in template.keys.values()
+            if isinstance(key, sgtk.SequenceKey)
+        ]
+        unique_versions = set(
+            template.get_fields(path)["version"]
+            for path in self.sgtk.paths_from_template(template, fields, skip_keys=skip)
+        )
+        return sorted(unique_versions)

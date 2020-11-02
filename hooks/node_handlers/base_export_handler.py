@@ -125,19 +125,6 @@ class ExportNodeHandler(HookBaseClass):
         )
         parameter_group.append_template(using_next)
 
-    def _add_missing_using_next_parm(self, node):
-        """
-        Backward compatibility method to add the `sgtk_using_next_version` to
-        a node that does not currently have it.
-
-        TODO: Remove this method when we are confident that we don't need it anymore.
-
-        :param node: A :class:`hou.Node` instance.
-        """
-        parameter_group = self._get_parameter_group(node)
-        self._add_using_next_parm(node, parameter_group)
-        node.setParmTemplateGroup(parameter_group.build())
-
     def _set_up_node(self, node, parameter_group):
         """
         Set up a node for use with shotgun pipeline.
@@ -245,51 +232,6 @@ class ExportNodeHandler(HookBaseClass):
             glob_path = re.sub(re.escape(frame_spec), r"*", glob_path)
         return glob_path
 
-    def _resolve_all_versions_from_fields(self, node, fields, template):
-        """
-        Using fields and a shotgun template, get all the versions on disk
-        that relate to the current item.
-
-        :param node: A :class:`hou.Node` instance.
-        :param dict fields: The template fields.
-        :param template: An :class:`sgtk.Template`.
-
-        :rtype: list(int)
-        """
-        versions = set()
-        if fields and "name" in fields:
-            fields.setdefault("version", 1)
-            path = template.apply_fields(fields)
-            glob_path = path
-
-            version_key = template.keys.get("version")
-            if version_key:
-                format_spec = version_key.format_spec or ""
-                match = version_key._FORMAT_SPEC_RE.match(format_spec)
-                if match:
-                    pad_char = match.groups()[0]
-                    min_width = int(match.groups()[-1])
-                else:
-                    pad_char = "0"
-                    min_width = 1
-                max_pad_width = min_width - 1
-                padded_version_regex = r"%s{0,%s}\d{1,}"
-                padded_version_regex %= pad_char, max_pad_width
-                regex = r"([/_\.][vV])({})([/_\.])".format(padded_version_regex)
-                glob_path = re.sub(regex, r"\1*\3", glob_path)
-
-            glob_path = self._get_sequence_glob_path(glob_path, template, fields)
-            self.parent.logger.debug("GLOB_PATH: %s", glob_path)
-            version_paths = glob.iglob(glob_path)
-            for key, paths in itertools.groupby(version_paths, key=os.path.dirname):
-                version_path = paths.next()
-                self.parent.logger.debug("KEY: %s", key)
-                self.parent.logger.debug("VERSION_PATH: %s", version_path)
-                fields = template.validate_and_get_fields(version_path)
-                if fields:
-                    versions.add(int(fields["version"]))
-        return sorted(versions)
-
     def _resolve_version(self, all_versions, current):
         """
         From a given string, resolve the current version.
@@ -315,6 +257,7 @@ class ExportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param bool sgtk_enabled: The state to set the parameters to.
         """
+        super(ExportNodeHandler, self)._enable_sgtk(node, sgtk_enabled)
         output_parm = node.parm(self.OUTPUT_PARM)
         output_parm.lock(sgtk_enabled)
 
@@ -383,10 +326,6 @@ class ExportNodeHandler(HookBaseClass):
         """
         node = kwargs["node"]
         using_next_parm = node.parm(self.USING_NEXT_VERSION)
-        # TODO: remove this in time when all nodes contain using next parm
-        if not using_next_parm:
-            self._add_missing_using_next_parm(node)
-            using_next_parm = node.parm(self.USING_NEXT_VERSION)
         sgtk_version = node.parm(self.SGTK_VERSION)
         using_next = sgtk_version.evalAsString() in self.VERSION_POLICIES
         using_next_parm.set(using_next)
@@ -407,17 +346,13 @@ class ExportNodeHandler(HookBaseClass):
         self._update_template_fields(node, fields)
         self._update_optional_keys(node, template, fields)
 
-        all_versions = self._resolve_all_versions_from_fields(node, fields, template)
+        all_versions = self._resolve_all_versions_from_fields(fields, template)
         sgtk_version = node.parm(self.SGTK_VERSION)
         self._update_all_versions(node, all_versions)
 
+        using_next = sgtk_version.evalAsString() in self.VERSION_POLICIES
         using_next_parm = node.parm(self.USING_NEXT_VERSION)
-        # TODO: remove this in time when all nodes contain using next parm
-        if not using_next_parm:
-            self._add_missing_using_next_parm(node)
-            using_next = sgtk_version.evalAsString() in self.VERSION_POLICIES
-            using_next_parm = node.parm(self.USING_NEXT_VERSION)
-            using_next_parm.set(using_next)
+        using_next_parm.set(using_next)
 
         if using_next_parm.eval():
             sgtk_version.set(len(all_versions))
@@ -576,9 +511,7 @@ class ExportNodeHandler(HookBaseClass):
             if "SEQ" in fields:
                 fields["SEQ"] = "FORMAT: $F"
             current_version = fields.get("version", self.NEXT_VERSION_STR)
-            all_versions = self._resolve_all_versions_from_fields(
-                node, fields, template
-            )
+            all_versions = self._resolve_all_versions_from_fields(fields, template)
             self._populate_from_fields(node, fields)
             self._update_all_versions(node, all_versions)
             self._set_version(node, current_version)

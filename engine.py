@@ -792,7 +792,8 @@ class HoudiniEngine(sgtk.platform.Engine):
         from sgtk.platform import constants
 
         return self._safe_path_join(
-            self.disk_location, constants.BUNDLE_STYLESHEET_FILE,
+            self.disk_location,
+            constants.BUNDLE_STYLESHEET_FILE,
         )
 
     def _get_engine_root_path(self):
@@ -1132,7 +1133,8 @@ class HoudiniEngine(sgtk.platform.Engine):
                     tk_houdini = self.import_module("tk_houdini")
                     base_class = tk_houdini.base_hooks.NodeHandlerBase
                     hook_instance = self.create_hook_instance(
-                        handler["hook"], base_class=base_class,
+                        handler["hook"],
+                        base_class=base_class,
                     )
                     break
             category_handler[node_type_name] = hook_instance
@@ -1231,4 +1233,4 @@ def _refresh_callback(event):
             handler = engine.node_handler(node)
             use_sgtk = node.parm("use_sgtk")
             if use_sgtk and use_sgtk.eval():
-                handler._refresh_file_path(node)
+                handler.refresh_file_path({"node": node})

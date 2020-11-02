@@ -22,6 +22,8 @@ in your project configuration settings with the following inheritance:
 """
 import sgtk
 
+import hou
+
 HookBaseClass = sgtk.get_hook_baseclass()
 
 
@@ -34,3 +36,4 @@ class BackgroundImagePlaneNodeHandler(HookBaseClass):
     NODE_CATEGORY = "Object"
 
     INPUT_PARM = "file"
+    HOU_FILE_TYPE = hou.fileType.Image
