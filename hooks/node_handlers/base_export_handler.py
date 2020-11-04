@@ -95,9 +95,6 @@ class ExportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param parameter_group: The node's :class:`ParmGroup`.
         """
-        if self.OPTIONAL_KEYS in parameter_group:
-            return
-
         optional_keys = hou.StringParmTemplate(
             self.OPTIONAL_KEYS,
             "optional keys",
@@ -114,9 +111,6 @@ class ExportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param parameter_group: The node's :class:`ParmGroup`.
         """
-        if self.USING_NEXT_VERSION in parameter_group:
-            return
-
         using_next = hou.ToggleParmTemplate(
             self.USING_NEXT_VERSION,
             "using next version",

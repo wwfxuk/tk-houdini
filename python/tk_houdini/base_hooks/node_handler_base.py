@@ -60,6 +60,7 @@ class NodeHandlerBase(HookBaseClass):
                     )
                     cls._publish_template = publish_template
                     cls.extra_args = handler["extra_args"]
+                    cls.init_node_values = handler["init_node_values"]
                     engine.logger.debug(repr(handler))
                     break
         return super(NodeHandlerBase, cls).__new__(cls, *args, **kwargs)
@@ -405,6 +406,25 @@ class NodeHandlerBase(HookBaseClass):
         )
         return sgtk_folder
 
+    def _set_up_init_node_values(self, node):
+        """
+        From the settings `init_node_values`, populate this node.
+
+        :param node: A :class:`hou.Node` instance.
+        """
+        self.parent.logger.debug("Setting parameter values from settings")
+        for parm_name, value in self.init_node_values.items():
+            parm = node.parm(parm_name)
+            if parm:
+                self.parent.logger.debug(
+                    "Setting '%s.%s' to %r.", node.name(), parm_name, value
+                )
+                parm.set(value)
+            else:
+                self.parent.logger.debug(
+                    "Parm %r doesn't exist on %r, skipping.", parm_name, node.name()
+                )
+
     def _set_up_node(self, node, parameter_group, hou=None):
         """
         Set up a node for use with shotgun pipeline.
@@ -419,13 +439,15 @@ class NodeHandlerBase(HookBaseClass):
             import hou
         self._set_up_parms(node)
         sgtk_folder = self._create_sgtk_folder(node)
-        if self.SGTK_IDENTIFIER not in parameter_group:
-            sgtk_identifier = hou.ToggleParmTemplate(
-                self.SGTK_IDENTIFIER, "SGTK", default_value=True, is_hidden=True
-            )
-            parameter_group.append_template(sgtk_identifier)
+
+        sgtk_identifier = hou.ToggleParmTemplate(
+            self.SGTK_IDENTIFIER, "SGTK", default_value=True, is_hidden=True
+        )
+        parameter_group.append_template(sgtk_identifier)
+
         self._customise_parameter_group(node, parameter_group, sgtk_folder)
         node.setParmTemplateGroup(parameter_group.build())
+        self._set_up_init_node_values(node)
 
     def add_sgtk_parms(self, node):
         """

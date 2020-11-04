@@ -158,46 +158,45 @@ class ImportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance.
         :param parameter_group: A :class:`ParmGroup` instance.
         """
-        if self.SGTK_PUBLISH_DATA not in parameter_group:
-            sgtk_publish_data = hou.StringParmTemplate(
-                self.SGTK_PUBLISH_DATA, "publish data", 1, is_hidden=True
-            )
-            parameter_group.append_template(sgtk_publish_data)
-        if self.SGTK_LAST_USED not in parameter_group:
-            sgtk_last_used = hou.ToggleParmTemplate(
-                self.SGTK_LAST_USED,
-                "shotgun last used",
-                default_value=False,
-                is_hidden=True,
-            )
-            parameter_group.append_template(sgtk_last_used)
-        if self.SGTK_WORK_FILE_DATA not in parameter_group:
-            sgtk_work_file_data = hou.StringParmTemplate(
-                self.SGTK_WORK_FILE_DATA,
-                "work data",
-                1,
-                default_value=(self.DEFAULT_WORK_FILE_DATA,),
-                is_hidden=True,
-            )
-            parameter_group.append_template(sgtk_work_file_data)
-        if self.SGTK_FILE_DATA not in parameter_group:
-            sgtk_file_data = hou.StringParmTemplate(
-                self.SGTK_FILE_DATA,
-                "file data",
-                1,
-                default_value=(self.DEFAULT_FILE_DATA,),
-                is_hidden=True,
-            )
-            parameter_group.append_template(sgtk_file_data)
-        if self.SGTK_CURRENT_TAB not in parameter_group:
-            sgtk_current_tab = hou.IntParmTemplate(
-                self.SGTK_CURRENT_TAB,
-                "current tab",
-                1,
-                default_value=(0,),
-                is_hidden=True,
-            )
-            parameter_group.append_template(sgtk_current_tab)
+        sgtk_publish_data = hou.StringParmTemplate(
+            self.SGTK_PUBLISH_DATA, "publish data", 1, is_hidden=True
+        )
+        parameter_group.append_template(sgtk_publish_data)
+
+        sgtk_last_used = hou.ToggleParmTemplate(
+            self.SGTK_LAST_USED,
+            "shotgun last used",
+            default_value=False,
+            is_hidden=True,
+        )
+        parameter_group.append_template(sgtk_last_used)
+
+        sgtk_work_file_data = hou.StringParmTemplate(
+            self.SGTK_WORK_FILE_DATA,
+            "work data",
+            1,
+            default_value=(self.DEFAULT_WORK_FILE_DATA,),
+            is_hidden=True,
+        )
+        parameter_group.append_template(sgtk_work_file_data)
+
+        sgtk_file_data = hou.StringParmTemplate(
+            self.SGTK_FILE_DATA,
+            "file data",
+            1,
+            default_value=(self.DEFAULT_FILE_DATA,),
+            is_hidden=True,
+        )
+        parameter_group.append_template(sgtk_file_data)
+
+        sgtk_current_tab = hou.IntParmTemplate(
+            self.SGTK_CURRENT_TAB,
+            "current tab",
+            1,
+            default_value=(0,),
+            is_hidden=True,
+        )
+        parameter_group.append_template(sgtk_current_tab)
 
         super(ImportNodeHandler, self)._set_up_node(node, parameter_group, hou=hou)
 
@@ -1119,9 +1118,10 @@ class ImportNodeHandler(HookBaseClass):
 
         parm_name = work_file_data["parm"]
         all_parms = work_file_data["all_parms"]
-        index = all_parms.index(parm_name)
-        parm_name_parm = node.parm(self.SGTK_NODE_PARM)
-        parm_name_parm.set(index)
+        if parm_name:
+            index = all_parms.index(parm_name)
+            parm_name_parm = node.parm(self.SGTK_NODE_PARM)
+            parm_name_parm.set(index)
 
         version = work_file_data["current_version"]
         all_versions = list(map(str, work_file_data["all_versions"]))

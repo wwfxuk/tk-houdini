@@ -109,6 +109,7 @@ configuration:
                     type: template
                     fields: context, [name], [version], *
                 extra_args: { type: dict }
+                init_node_values: { type: dict }
 
     template_work_area:
         type: template

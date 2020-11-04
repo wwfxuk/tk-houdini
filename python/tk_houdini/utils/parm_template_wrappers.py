@@ -1,6 +1,9 @@
 from __future__ import print_function
 
 
+import sgtk
+
+
 def wrap_node_parameter_group(node):
     """
     Helper function to convert a node's parameter group into
@@ -21,27 +24,31 @@ class Parm(object):
     """
 
     @classmethod
-    def build_parm(cls, template):
+    def from_template(cls, template, parent=None):
         """
         Method to build a Parm object from a given template.
 
         :param template: A :class:`hou.ParmTemplate` instance.
+        :param Parm parent : The parent object.
 
         :returns: A :class:`Parm` or :class:`ParmFolder` instance.
         """
         import hou
 
         if template.type() == hou.parmTemplateType.Folder:
-            return ParmFolder(template)
-        return Parm(template)
+            return ParmFolder(template, parent=parent)
+        return Parm(template, parent=parent)
 
-    def __init__(self, template):
+    def __init__(self, template, parent=None):
         """
         Initialise the class.
 
         :param template: A :class:`hou.ParmTemplate` instance.
+        :param Parm parent : The parent object.
         """
         self.template = template
+        self.parent = parent
+        self.logger = sgtk.platform.get_logger(__name__)
 
     @property
     def name(self):
@@ -74,15 +81,80 @@ class ParmFolder(Parm):
     Wrapper class for houdini folder parameter template instances.
     """
 
-    def __init__(self, template):
+    def __init__(self, template, parent=None):
         """
         Initialise the class.
 
         :param template: A :class:`hou.ParmTemplate` instance.
+        :param Parm parent : The parent object.
         """
-        super(ParmFolder, self).__init__(template)
-        self.__children = [Parm.build_parm(child) for child in template.parmTemplates()]
+        super(ParmFolder, self).__init__(template, parent=parent)
+        self.__children = [
+            Parm.from_template(child) for child in template.parmTemplates()
+        ]
         self.__child_names = [child.name for child in self.__children]
+
+    @property
+    def descendents(self):
+        """
+        Get the descendent templates from this object.
+
+        :rtype: list(Parm)
+        """
+        descendents = []
+        for child in self:
+            descendents.append(child)
+            if isinstance(child, ParmFolder):
+                descendents.extend(child.descendents)
+        return descendents
+
+    def get_root(self):
+        """
+        Get the root item this object belongs to.
+
+        :returns: The top most parent :class:`ParmGroup` instance.
+        """
+        parent = current = self
+        while current.parent:
+            parent = current
+        return parent
+
+    def _remove_existing_children(self, parm, root):
+        """
+        Removes all child :class:`Parm` objects from the given :class:`Parm` that
+        already exist within the node template hierarchy.
+
+        :param Parm parm: The :class:`Parm` to check.
+        :param root parm: The highest level :class:`Parm` object that the given
+            :class:`Parm` will belong to.
+        """
+        for child in parm:
+            if child.name in root:
+                self.logger.debug("Parm %r already exists. Skipping", child.name)
+                index = parm.index_of_template(child.name)
+                parm.pop_template(index)
+            elif isinstance(child, ParmFolder):
+                self._remove_existing_children(child, root)
+
+    def remove_existing(self, parm):
+        """
+        Removes all instances of existing templates in the given :class:`Parm`
+        that already exist within the hierarchy.
+
+        If the :class:`Parm` itself is a duplicate, then this method retuns `None`
+        and the item is not added to the overall template.
+
+        :param Parm parm: The :class:`Parm` to check.
+
+        :returns: A sanitised :class:`Parm` or :class:`NoneType`
+        """
+        root = self.get_root()
+        if parm.name in root:
+            self.logger.debug("Parm %r already exists. Skipping", parm.name)
+            return None
+        elif isinstance(parm, ParmFolder):
+            self._remove_existing_children(parm, root)
+        return parm
 
     def index_of_template(self, template_name):
         """
@@ -93,6 +165,18 @@ class ParmFolder(Parm):
         """
         return self.__child_names.index(template_name)
 
+    def extend(self, parms):
+        """
+        Add multiple templates to the child templates list..
+
+        :param list(Parm)) parms: The list of Parm
+            instances to add.
+        """
+        for parm in parms:
+            self.append(parm)
+
+    __iadd__ = extend
+
     def extend_templates(self, templates):
         """
         Add multiple templates to the child templates list..
@@ -100,10 +184,19 @@ class ParmFolder(Parm):
         :param list(hou.ParmTemplate) templates: The list of template
             instances to add.
         """
-        template_names = (template.name() for template in templates)
-        child_templates = (Parm.build_parm(template) for template in templates)
-        self.__child_names.extend(template_names)
-        self.__children.extend(child_templates)
+        self.extend(Parm.from_template(template, parent=self) for template in templates)
+
+    def append(self, parm):
+        """
+        Add a template to the child templates list.
+
+        :param Parm parm: The Parm to add.
+        """
+        parm = self.remove_existing(parm)
+        if parm:
+            parm.parent = self
+            self.__child_names.append(parm.name)
+            self.__children.append(parm)
 
     def append_template(self, template):
         """
@@ -111,7 +204,20 @@ class ParmFolder(Parm):
 
         :param hou.ParmTemplate template: The template to add.
         """
-        self.extend_templates([template])
+        self.append(Parm.from_template(template, parent=self))
+
+    def insert(self, index, parm):
+        """
+        Insert a template into the child templates list.
+
+        :param int index: The position to add the template.
+        :param Parm parm: The Parm to insert.
+        """
+        parm = self.remove_existing(parm)
+        if parm:
+            parm.parent = self
+            self.__child_names.insert(index, parm.name)
+            self.__children.insert(index, parm)
 
     def insert_template(self, index, template):
         """
@@ -120,10 +226,8 @@ class ParmFolder(Parm):
         :param int index: The position to add the template.
         :param hou.ParmTemplate template: The template to insert.
         """
-        template_name = template.name()
-        self.__child_names.insert(index, template_name)
-        parm = Parm.build_parm(template)
-        self.__children.insert(index, parm)
+        parm = Parm.from_template(template, parent=self)
+        self.insert(index, parm)
 
     def pop_template(self, index):
         """
@@ -171,7 +275,7 @@ class ParmFolder(Parm):
 
         :rtype: bool
         """
-        return name in self.__child_names
+        return name in [item.name for item in self.descendents]
 
     def _child_templates(self):
         """
