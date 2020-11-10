@@ -153,8 +153,9 @@ class NodeHandlerBase(HookBaseClass):
         use_sgtk.set(False)
         self._enable_sgtk(node, False)
         parameter_group = self._get_parameter_group(node)
-        self._remove_sgtk_items_from_parm_group(parameter_group)
-        node.setParmTemplateGroup(parameter_group.build())
+        if parameter_group:
+            self._remove_sgtk_items_from_parm_group(parameter_group)
+            node.setParmTemplateGroup(parameter_group.build())
         return True
 
     def _restore_sgtk_parms(self, node):
@@ -210,16 +211,19 @@ class NodeHandlerBase(HookBaseClass):
 
         :param node: A :class:`hou.Node` instance.
         """
+        current_version = None
         engine_version = self.parent.version
         folder = node.parm(self.SGTK_FOLDER)
-        folder_template = folder.parmTemplate()
-        folder_name = folder_template.folderNames()[0]
-        version_match = re.match(r"^SGTK \(ver: (.*)\)$", folder_name)
-        if version_match:
-            version = version_match.group(1)
-            if engine_version != version:
-                self.remove_sgtk_parms(node)
-                self.restore_sgtk_parms(node)
+        if folder:
+            folder_template = folder.parmTemplate()
+            folder_name = folder_template.folderNames()[0]
+            version_match = re.match(r"^SGTK \(ver: (.*)\)$", folder_name)
+            if version_match:
+                current_version = version_match.group(1)
+
+        if engine_version != current_version:
+            self.remove_sgtk_parms(node)
+            self.restore_sgtk_parms(node)
 
     def on_name_changed(self, node=None):
         """

@@ -421,19 +421,20 @@ class IfdNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance containing sgtk parameters.
         """
         vm_dcmfilename = node.parm(self.VM_DCMFILENAME)
-        dcm_file_path = vm_dcmfilename.evalAsString()
+        dcm_file_path = vm_dcmfilename.evalAsString() if vm_dcmfilename else None
 
         super(IfdNodeHandler, self)._restore_sgtk_parms(node)
 
         dcm_template = self._get_template(self.DCM_WORK_TEMPLATE)
 
-        dcm_fields = dcm_template.validate_and_get_fields(dcm_file_path)
-        if dcm_fields:
-            sgtk_deep_extension = node.parm(self.SGTK_DEEP_EXT)
-            entries = sgtk_deep_extension.menuItems()
-            ext = dcm_fields.get("extension", "rat")
-            index = entries.index(ext)
-            sgtk_deep_extension.set(index)
+        if dcm_file_path is not None:
+            dcm_fields = dcm_template.validate_and_get_fields(dcm_file_path)
+            if dcm_fields:
+                sgtk_deep_extension = node.parm(self.SGTK_DEEP_EXT)
+                entries = sgtk_deep_extension.menuItems()
+                ext = dcm_fields.get("extension", "rat")
+                index = entries.index(ext)
+                sgtk_deep_extension.set(index)
 
     def _get_output_paths_and_templates(self, node):
         """

@@ -346,10 +346,10 @@ class ExportNodeHandler(HookBaseClass):
 
         using_next = sgtk_version.evalAsString() in self.VERSION_POLICIES
         using_next_parm = node.parm(self.USING_NEXT_VERSION)
-        using_next_parm.set(using_next)
-
-        if using_next_parm.eval():
-            sgtk_version.set(len(all_versions))
+        if using_next_parm:
+            using_next_parm.set(using_next)
+            if using_next_parm.eval():
+                sgtk_version.set(len(all_versions))
         current = sgtk_version.evalAsString()
         resolved_version = self._resolve_version(all_versions, current)
 
@@ -524,9 +524,10 @@ class ExportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance containing sgtk parameters.
         """
         output_parm = node.parm(self.OUTPUT_PARM)
-        original_file_path = output_parm.unexpandedString()
+        original_file_path = output_parm.unexpandedString() if output_parm else None
         self.add_sgtk_parms(node)
-        self._populate_from_file_path(node, original_file_path)
+        if original_file_path is not None:
+            self._populate_from_file_path(node, original_file_path)
 
     def _get_sequence_paths(self, path, template, fields):
         """

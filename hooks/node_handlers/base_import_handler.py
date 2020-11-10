@@ -1348,10 +1348,10 @@ class ImportNodeHandler(HookBaseClass):
         :param node: A :class:`hou.Node` instance containing sgtk parameters.
         """
         input_parm = node.parm(self.INPUT_PARM)
-        original_file_path = input_parm.unexpandedString()
+        original_file_path = input_parm.unexpandedString() if input_parm else None
 
         current_tab_parm = node.parm(self.SGTK_CURRENT_TAB)
-        current_tab_index = current_tab_parm.eval()
+        original_tab_index = current_tab_parm.eval() if current_tab_parm else None
 
         publish_data = self._retrieve_publish_data(node)
         self.add_sgtk_parms(node)
@@ -1367,15 +1367,15 @@ class ImportNodeHandler(HookBaseClass):
         self._populate_from_work_file_data(node)
         self._populate_from_file_data(node)
 
-        sgtk_path_selection = node.parm(self.SGTK_PATH_SELECTION)
-        sgtk_path_selection.set(current_tab_index)
+        if original_tab_index is not None:
+            node.parm(self.SGTK_PATH_SELECTION).set(original_tab_index)
 
         sgtk_last_used = node.parm(self.SGTK_LAST_USED)
         if sgtk_last_used.eval():
             use_sgtk = node.parm(self.USE_SGTK)
             use_sgtk.set(True)
             self._enable_sgtk(node, True)
-        else:
+        elif original_file_path is not None:
             input_parm.lock(False)
             input_parm.set(original_file_path)
 
