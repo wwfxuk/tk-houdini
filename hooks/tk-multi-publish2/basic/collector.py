@@ -23,6 +23,11 @@ _HOUDINI_OUTPUTS = {
         "ifd",  # mantra render node
         "arnold",  # arnold render node
     ],
+    # sops
+    hou.sopNodeTypeCategory(): [
+        "rop_alembic",  # alembic cache
+        "rop_geometry",  # geometry
+    ],
 }
 
 

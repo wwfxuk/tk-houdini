@@ -454,13 +454,7 @@ class ImportNodeHandler(HookBaseClass):
         output_parm = node.parm(self.INPUT_PARM)
         output_parm.lock(sgtk_enabled)
         if sgtk_enabled:
-            selection = self._path_selection(node)
-            if selection == self.PUBLISH:
-                self._refresh_file_path(node)
-            elif selection == self.WORK:
-                self._refresh_file_path_from_node(node)
-            else:
-                self._refresh_file_path_from_path(node)
+            self._refresh_file_path(node)
 
     def enable_sgtk(self, kwargs):
         """
@@ -594,16 +588,22 @@ class ImportNodeHandler(HookBaseClass):
 
         :param node: A :class:`hou.Node` instance.
         """
-        sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
-        publish_data_str = sgtk_publish_data.evalAsString()
-        if publish_data_str:
-            publish_data = json.loads(self._escape_publish_data(publish_data_str))
-            self._refresh_file_path_from_publish_data(node, publish_data)
+        selection = self._path_selection(node)
+        if selection == self.PUBLISH:
+            sgtk_publish_data = node.parm(self.SGTK_PUBLISH_DATA)
+            publish_data_str = sgtk_publish_data.evalAsString()
+            if publish_data_str:
+                publish_data = json.loads(self._escape_publish_data(publish_data_str))
+                self._refresh_file_path_from_publish_data(node, publish_data)
+            else:
+                input_parm = node.parm(self.INPUT_PARM)
+                input_parm.lock(False)
+                input_parm.set(self.NO_PUBLISH)
+                input_parm.lock(True)
+        elif selection == self.WORK:
+            self._refresh_file_path_from_node(node)
         else:
-            input_parm = node.parm(self.INPUT_PARM)
-            input_parm.lock(False)
-            input_parm.set(self.NO_PUBLISH)
-            input_parm.lock(True)
+            self._refresh_file_path_from_path(node)
 
     @staticmethod
     def _escape_publish_data(publish_data_str):
@@ -1321,12 +1321,7 @@ class ImportNodeHandler(HookBaseClass):
             sgtk_current_tab = node.parm(self.SGTK_CURRENT_TAB)
             current_selection = self._path_selection(node)
             sgtk_current_tab.set(current_selection)
-            if current_selection == self.PUBLISH:
-                self._refresh_file_path(node)
-            elif current_selection == self.WORK:
-                self._refresh_file_path_from_node(node)
-            else:
-                self._refresh_file_path_from_path(node)
+            self._refresh_file_path(node)
 
     #############################################################################################
     # Utilities
