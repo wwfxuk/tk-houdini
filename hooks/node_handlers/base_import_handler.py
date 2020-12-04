@@ -926,7 +926,7 @@ class ImportNodeHandler(HookBaseClass):
         parent_parm = node.parm(self.SGTK_NODE_PARM)
         sgtk_resolved_version = node.parm(self.SGTK_WORK_RESOLVED_VERSION)
         node_path = work_file_data["node"]
-        parent_node = hou.node(node_path)
+        parent_node = node.node(node_path)
         if parent_node:
             parent_node_parm = node.parm(self.SGTK_NODE_NAME)
             parent_node_parm.set(node_path)
@@ -1045,7 +1045,7 @@ class ImportNodeHandler(HookBaseClass):
             work_file_parm.evalAsString() or self.DEFAULT_WORK_FILE_DATA
         )
         if parent_node:
-            work_file_data["node"] = parent_node.path()
+            work_file_data["node"] = parm.evalAsString()
             path_parm = node.parm(self.SGTK_NODE_PARM)
             node_handler = self.parent.node_handler(parent_node)
             parms = self._get_node_file_parms(parent_node)
@@ -1070,7 +1070,7 @@ class ImportNodeHandler(HookBaseClass):
         work_file_data = json.loads(
             work_file_parm.evalAsString() or self.DEFAULT_WORK_FILE_DATA
         )
-        parent_node = hou.node(work_file_data["node"])
+        parent_node = node.node(work_file_data["node"])
         parm_name = parm.evalAsString()
         work_file_data["parm"] = parm_name
         if parent_node:
