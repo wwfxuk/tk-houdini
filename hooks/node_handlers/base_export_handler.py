@@ -13,7 +13,6 @@ These include:
 import copy
 import glob
 import json
-import itertools
 import os
 import re
 
@@ -342,9 +341,15 @@ class ExportNodeHandler(HookBaseClass):
 
         all_versions = self._resolve_all_versions_from_fields(fields, template)
         sgtk_version = node.parm(self.SGTK_VERSION)
-        self._update_all_versions(node, all_versions)
 
-        using_next = sgtk_version.evalAsString() in self.VERSION_POLICIES
+        value_before_update = sgtk_version.evalAsString()
+        self._update_all_versions(node, all_versions)
+        current = sgtk_version.evalAsString()
+        if value_before_update in sgtk_version.menuItems():
+            current = value_before_update
+        sgtk_version.set(current)  # Force update UI: Ensure index is re-corrected
+
+        using_next = current in self.VERSION_POLICIES
         using_next_parm = node.parm(self.USING_NEXT_VERSION)
         if using_next_parm:
             using_next_parm.set(using_next)
