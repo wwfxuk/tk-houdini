@@ -467,6 +467,55 @@ class NodeHandlerBase(HookBaseClass):
     # UI Callbacks
     ###########################################################################
 
+    @classmethod
+    def restore_version_menu_index(cls, arg=None):
+        """Decorator for wrapping parameter callbacks to fix incorrect menu choice.
+
+        Parameter callback methods must contain only 2 arguments:
+        ``self`` and ``kwargs`` i.e. decorating implementations of
+        ``refresh_file_path_from_version`` in sub-hook classes::
+
+            @HookBaseClass.restore_version_menu_index
+            def refresh_file_path_from_version(self, kwargs):
+
+        Used to correct label shown in menu UI, where it may be out of sync with the
+        ``evalAsString()`` result. See PIPE-255 (GitHub #16), PIPE-259 (GitHub #17).
+
+        Args:
+            arg (object or str): Method to wrap, or name of version menu parameter.
+
+        Returns:
+            object: Decorator for wrapping a method.
+        """
+        decorated_with_args = callable(arg)
+        if decorated_with_args:
+            # when called with @HookBaseClass.restore_version_menu_index
+            parm_name = cls.SGTK_VERSION
+        else:
+            # when called with @HookBaseClass.restore_version_menu_index()
+            # when called with @HookBaseClass.restore_version_menu_index(SGTK_PARM_NAME)
+            parm_name = arg or cls.SGTK_VERSION
+
+        def decorator(callback):
+            def wrapped_callback(self, kwargs):
+                version_parm = kwargs["node"].parm(parm_name)
+                value_before_update = version_parm.evalAsString()
+                try:
+                    callback(self, kwargs)
+                finally:
+                    current = version_parm.evalAsString()
+                    if value_before_update in version_parm.menuItems():
+                        current = value_before_update
+
+                    # Force update UI: Ensure index is re-corrected
+                    version_parm.set(current)
+
+            return wrapped_callback
+
+        if decorated_with_args:
+            decorator = decorator(arg)
+        return decorator
+
     def activate_sgtk(self, node):
         """
         Activate Shotgun parameters and callbacks if not already.
