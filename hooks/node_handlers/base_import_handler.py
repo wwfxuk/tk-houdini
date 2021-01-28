@@ -920,20 +920,20 @@ class ImportNodeHandler(HookBaseClass):
 
         :param node: A :class:`hou.Node` instance.
         """
-        work_file_parm = node.parm(self.SGTK_WORK_FILE_DATA)
-        work_file_data = json.loads(
-            work_file_parm.evalAsString() or self.DEFAULT_WORK_FILE_DATA
+        work_data_parm = node.parm(self.SGTK_WORK_FILE_DATA)
+        node_work_data = json.loads(
+            work_data_parm.evalAsString() or self.DEFAULT_WORK_FILE_DATA
         )
         parent_parm = node.parm(self.SGTK_NODE_PARM)
         sgtk_resolved_version = node.parm(self.SGTK_WORK_RESOLVED_VERSION)
-        node_path = work_file_data["node"]
+        node_path = node_work_data["node"]
         parent_node = node.node(node_path)
         if parent_node:
             parent_node_parm = node.parm(self.SGTK_NODE_NAME)
             parent_node_parm.set(node_path)
 
-            parm_name = work_file_data["parm"]
-            all_parms = work_file_data["all_parms"]
+            parm_name = node_work_data["parm"]
+            all_parms = node_work_data["all_parms"]
             if all_parms:
                 index = all_parms.index(parm_name)
             else:
@@ -945,10 +945,10 @@ class ImportNodeHandler(HookBaseClass):
                 fields,
                 all_versions,
             ) = self._get_template_fields_and_work_versions(parent_node, parm_name)
-            work_file_data["all_versions"] = all_versions
-            work_file_parm.set(json.dumps(work_file_data))
+            node_work_data["all_versions"] = all_versions
+            work_data_parm.set(json.dumps(node_work_data))
 
-            version = work_file_data["current_version"]
+            version = node_work_data["current_version"]
             resolved_version = self._resolve_work_version(all_versions, version)
 
             sgtk_resolved_version.set(str(resolved_version or self.NO_VERSIONS))
@@ -971,7 +971,7 @@ class ImportNodeHandler(HookBaseClass):
             sgtk_resolved_version.set(self.NO_VERSIONS)
             path = self.NO_NODE
 
-        work_file_parm.set(json.dumps(work_file_data))
+        work_data_parm.set(json.dumps(node_work_data))
         input_parm = node.parm(self.INPUT_PARM)
         input_parm.lock(False)
         input_parm.set(path)
