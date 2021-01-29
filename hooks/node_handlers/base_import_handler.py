@@ -926,6 +926,8 @@ class ImportNodeHandler(HookBaseClass):
         )
         parent_parm = node.parm(self.SGTK_NODE_PARM)
         sgtk_resolved_version = node.parm(self.SGTK_WORK_RESOLVED_VERSION)
+        sgtk_version = node.parm(self.SGTK_WORK_VERSION)
+
         node_path = node_work_data["node"]
         parent_node = node.node(node_path)
         if parent_node:
@@ -964,9 +966,12 @@ class ImportNodeHandler(HookBaseClass):
             else:
                 path = self.NOTHING_ON_DISK
 
+            # Ensure currently chosen work version is kept
+            updated_versions = list(map(str, all_versions)) + [self.LATEST_POLICY]
+            if str(version) in updated_versions:
+                sgtk_version.set(updated_versions.index(str(version)))
         else:
             parent_parm.set(0)
-            sgtk_version = node.parm(self.SGTK_WORK_VERSION)
             sgtk_version.set(0)
             sgtk_resolved_version.set(self.NO_VERSIONS)
             path = self.NO_NODE
@@ -1005,6 +1010,13 @@ class ImportNodeHandler(HookBaseClass):
         )
         all_versions = work_file_data.get("all_versions", [])
         return all_versions
+
+    def on_loaded(self, node=None):
+        """Ensure data is loaded back into the version menus and resolved."""
+        super(ImportNodeHandler, self).on_loaded(node=node)
+        if isinstance(node, hou.Node):
+            self._populate_from_work_file_data(node)
+            self._populate_from_file_data(node)
 
     def populate_work_versions(self, kwargs):
         """
