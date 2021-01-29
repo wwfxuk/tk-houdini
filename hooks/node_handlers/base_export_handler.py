@@ -329,6 +329,21 @@ class ExportNodeHandler(HookBaseClass):
         super(ExportNodeHandler, self).on_loaded(node=node)
         if isinstance(node, hou.Node):
             self._refresh_file_path(node)
+            node.addEventCallback(
+                [
+                    hou.nodeEventType.SelectionChanged,
+                    hou.nodeEventType.AppearanceChanged,
+                ],
+                self.on_node_event,
+            )
+
+    def on_node_event(self, event_type, **kwargs):
+        self.logger.warn("%s: %s", event_type, kwargs)
+        if event_type == hou.nodeEventType.AppearanceChanged:
+            node = kwargs["node"]
+            change_type = kwargs["change_type"]
+            if change_type == hou.appearanceChangeType.Pick and node.isPicked():
+                self._refresh_file_path(node)
 
     def _refresh_file_path(self, node):
         """

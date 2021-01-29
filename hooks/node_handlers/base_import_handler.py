@@ -1017,6 +1017,22 @@ class ImportNodeHandler(HookBaseClass):
         if isinstance(node, hou.Node):
             self._populate_from_work_file_data(node)
             self._populate_from_file_data(node)
+            node.addEventCallback(
+                [
+                    hou.nodeEventType.SelectionChanged,
+                    hou.nodeEventType.AppearanceChanged,
+                ],
+                self.on_node_event,
+            )
+
+    def on_node_event(self, event_type, **kwargs):
+        self.logger.warn("%s: %s", event_type, kwargs)
+        if event_type == hou.nodeEventType.AppearanceChanged:
+            node = kwargs["node"]
+            change_type = kwargs["change_type"]
+            if change_type == hou.appearanceChangeType.Pick and node.isPicked():
+                self._populate_from_work_file_data(node)
+                self._populate_from_file_data(node)
 
     def populate_work_versions(self, kwargs):
         """
