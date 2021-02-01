@@ -1250,6 +1250,7 @@ class ImportNodeHandler(HookBaseClass):
         file_parm = node.parm(self.SGTK_FILE_PATH)
         file_path = file_parm.unexpandedString()
         sgtk_resolved_version = node.parm(self.SGTK_FILE_RESOLVED_VERSION)
+        sgtk_version = node.parm(self.SGTK_FILE_VERSION)
         if file_path:
             all_versions = self._resolve_all_versions_from_path(file_path)
             file_data["all_versions"] = all_versions
@@ -1263,9 +1264,13 @@ class ImportNodeHandler(HookBaseClass):
                 file_parm.set(path)
             else:
                 path = self.NOTHING_ON_DISK
+
+            # Ensure currently chosen work version is kept
+            updated_versions = list(map(str, all_versions)) + [self.LATEST_POLICY]
+            if str(version) in updated_versions:
+                sgtk_version.set(updated_versions.index(str(version)))
         else:
             file_parm.set("")
-            sgtk_version = node.parm(self.SGTK_FILE_VERSION)
             sgtk_version.set(0)
             sgtk_resolved_version.set(self.NO_VERSIONS)
             path = self.NO_FILE
